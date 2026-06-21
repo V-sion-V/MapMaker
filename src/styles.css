@@ -95,6 +95,9 @@ main{flex:1;display:flex;min-height:0}
   letter-spacing:-.3px;text-shadow:0 1px 2px #000}
 .cell .enemy.unknown{border-color:#ffd54f;border-style:dashed}
 .cell .enemy.sel{box-shadow:0 0 0 3px var(--accent);border-color:#fff}
+.cell .enemy.invalid-position::after{content:"!";position:absolute;top:-10px;right:-7px;z-index:4;
+  width:15px;height:15px;display:flex;align-items:center;justify-content:center;border-radius:50%;
+  background:var(--accent2);color:#241b0c;font-size:11px;font-weight:900;box-shadow:0 1px 4px #000}
 /* non-deployable tiles: show a diagonal hatch only while placing enemies */
 #grid.mode-enemy .cell.nodeploy::before{content:"";position:absolute;inset:0;z-index:1;
   background:repeating-linear-gradient(45deg,rgba(0,0,0,0) 0 5px,rgba(0,0,0,.42) 5px 7px);
@@ -176,7 +179,9 @@ main{flex:1;display:flex;min-height:0}
 .enemy-list{display:flex;flex-direction:column;gap:3px;margin-top:6px}
 .enemy-row{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:5px;background:var(--panel2)}
 .enemy-row.sel{outline:1px solid var(--accent)}
+.enemy-row.invalid-position{border-left:3px solid var(--accent2);padding-left:5px}
 .enemy-row .nm{flex:1;cursor:pointer}
+.enemy-position-warning{color:var(--accent2);font-size:10px;font-weight:600}
 .enemy-row input[type=number]{width:48px}
 .enemy-row .x{cursor:pointer;color:var(--muted)}
 .enemy-row .x:hover{color:var(--danger)}
@@ -205,10 +210,12 @@ main{flex:1;display:flex;min-height:0}
 .enum-option mark{background:transparent;color:var(--accent2);font-weight:700}
 .enum-option.exact-match mark{color:#fff}
 .unit-sublist{display:flex;flex-direction:column;gap:5px}
-.unit-skill-row{display:grid;grid-template-columns:minmax(0,1fr) 48px 32px;gap:5px;align-items:center}
+.unit-skill-row{display:grid;grid-template-columns:26px minmax(0,1fr) 48px 32px;gap:5px;align-items:center;
+  padding-left:6px}
 .unit-skill-row input[type=number]{width:100%}
-.unit-equipment-row{display:grid;grid-template-columns:minmax(0,1fr) 32px;gap:5px;align-items:center}
-.unit-skill-row button,.unit-equipment-row button{padding-left:0;padding-right:0}
+.unit-equipment-row{display:grid;grid-template-columns:26px minmax(0,1fr) 32px;gap:5px;align-items:center;
+  padding-left:6px}
+.unit-item-index{text-align:right;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
 
 .fieldrow{display:flex;align-items:center;gap:8px;margin-bottom:7px}
 .fieldrow label{width:74px;color:var(--muted)}
@@ -256,8 +263,8 @@ main{flex:1;display:flex;min-height:0}
 .enemy-config-detail{height:100%;min-width:0;min-height:0;max-width:760px;overflow-y:auto;overflow-x:hidden;
   padding-right:8px}
 .config-modal .unit-config .fieldrow>label{width:110px}
-.config-modal .unit-skill-row{grid-template-columns:minmax(280px,1fr) 70px 36px;gap:8px}
-.config-modal .unit-equipment-row{grid-template-columns:minmax(280px,1fr) 36px;gap:8px}
+.config-modal .unit-skill-row{grid-template-columns:10px minmax(280px,1fr) 70px 36px;gap:8px}
+.config-modal .unit-equipment-row{grid-template-columns:10px minmax(280px,1fr) 36px;gap:8px}
 
 /* toast */
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);

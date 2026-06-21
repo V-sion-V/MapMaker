@@ -723,16 +723,18 @@ function updateCell(x, y) {
   const ter = state.terrainById[tid];
   c.style.background = ter ? ter.color : '#ff00ff';
   c.classList.toggle('deploy', inDeploy(x, y));
-  c.classList.toggle('nodeploy', !isDeployable(x, y));
+  c.classList.toggle('nodeploy', !isTerrainDeployable(x, y));
   c.innerHTML = '';
   const en = enemyAt(x, y);
   if (en) {
     const d = document.createElement('div');
     d.className = 'enemy';
+    const positionIssues = enemyPositionIssues(x, y);
     if (!isKnownUnit(en.name)) d.classList.add('unknown');
+    if (positionIssues.length) d.classList.add('invalid-position');
     if (isSelected(x, y)) d.classList.add('sel');
     d.textContent = initials(en.name);
-    d.title = `${en.name} (${x},${y})`;
+    d.title = `${en.name} (${x},${y})` + (positionIssues.length ? ` — ⚠ ${positionIssues.join('、')}` : '');
     c.appendChild(d);
   }
 }
@@ -762,7 +764,8 @@ function onCellDown(e) {
     const before = snapshot();
     if (en) { selectEnemyAt(x, y); }
     else if (state.activeUnitId != null) {
-      if (!isDeployable(x, y)) { toast('该地块不可部署，不能放置敌人'); return; }
+      const issue = enemyPositionIssues(x, y)[0];
+      if (issue) { toast(issue === '玩家部署区' ? '玩家部署区不能放置敌人' : '该地块不可部署，不能放置敌人'); return; }
       placeEnemy(x, y, state.activeUnitId); selectEnemyAt(x, y);
     }
     else { toast('先在右侧选择一个敌人单位'); return; }
@@ -810,6 +813,8 @@ function showReadout(x, y) {
   if (ter && ter.deployable === false) s += ' (不可部署)';
   if (en) s += `   👾 ${en.name}`;
   if (inDeploy(x, y)) s += '   🚩 部署区';
+  const issues = en ? enemyPositionIssues(x, y) : [];
+  if (issues.length) s += `   ⚠ 敌人位于${issues.join('、')}`;
   $('#coordReadout').textContent = s;
 }
 
@@ -902,7 +907,7 @@ function moveSelected(x, y) {
   const list = curPreset().enemies, en = list[s.index];
   if (!en || (en.x === x && en.y === y)) return;
   if (list.some(o => o !== en && o.x === x && o.y === y)) return; // cell taken
-  if (!isDeployable(x, y)) return;                                // can't stand here
+  if (enemyPositionIssues(x, y).length) return;                    // enemy cannot stand here
   const ox = en.x, oy = en.y;
   en.x = x; en.y = y;
   updateCell(ox, oy); updateCell(x, y); markDirty();
@@ -1154,7 +1159,7 @@ function renderEnemyPanel(r) {
   r.appendChild(ps);
 
   const us = section('选择要放置的单位');
-  us.appendChild(hint('选中后点网格放置；点已有敌人可拖动移动，右键删除。'));
+  us.appendChild(hint('选中后点网格放置；点已有敌人可拖动移动，右键删除。敌人不能进入不可部署地块或玩家部署区。'));
   const ul = document.createElement('div'); ul.className = 'unit-list';
   for (const u of unitsForPicker()) {
     const el = document.createElement('div');
@@ -1173,6 +1178,13 @@ function renderEnemyPanel(r) {
     row.className = 'enemy-row' + (state.selectedEnemy && state.selectedEnemy.preset === state.activePreset && state.selectedEnemy.index === i ? ' sel' : '');
     const nm = document.createElement('span'); nm.className = 'nm';
     nm.textContent = `${en.name} (${en.x},${en.y})`; if (!isKnownUnit(en.name)) nm.textContent += ' ⚠';
+    const positionIssues = enemyPositionIssues(en.x, en.y);
+    if (positionIssues.length) {
+      row.classList.add('invalid-position');
+      const warning = document.createElement('span'); warning.className = 'enemy-position-warning';
+      warning.textContent = `⚠ ${positionIssues.join('、')}`; warning.title = '该敌人当前站位非法';
+      nm.append(document.createElement('br'), warning);
+    }
     nm.onclick = () => { state.selectedEnemy = { preset: state.activePreset, index: i }; repaintAll(); renderEnemyPanel(r); scrollToCell(en.x, en.y); };
     const x = document.createElement('span'); x.className = 'x'; x.textContent = '✕';
     x.title = '删除'; x.onclick = () => { edit(() => p.enemies.splice(i, 1)); state.selectedEnemy = null; repaintAll(); renderEnemyPanel(r); };
@@ -1276,6 +1288,7 @@ function renderEnemyUnitConfig(r) {
   const skills = document.createElement('div'); skills.className = 'unit-sublist';
   (selected.skills ||= []).forEach((entry, index) => {
     const row = document.createElement('div'); row.className = 'unit-skill-row';
+    const number = document.createElement('span'); number.className = 'unit-item-index'; number.textContent = `${index + 1}.`;
     const picker = enumPicker(enums.skills, entry.skill, value => {
       entry.skill = value; markUnitsDirty(); renderEnemyUnitConfigPanelOnly();
     }, '搜索技能');
@@ -1286,7 +1299,7 @@ function renderEnemyUnitConfig(r) {
       entry.level = value; markUnitsDirty(); renderEnemyUnitConfigPanelOnly();
     };
     const del = mkBtn('✕', () => { selected.skills.splice(index, 1); markUnitsDirty(); renderEnemyUnitConfigPanelOnly(); });
-    del.className = 'mini danger'; row.append(picker, level, del); skills.appendChild(row);
+    del.className = 'mini danger'; row.append(number, picker, level, del); skills.appendChild(row);
   });
   if (!selected.skills.length) skills.appendChild(hint('没有技能'));
   form.appendChild(skills);
@@ -1303,11 +1316,12 @@ function renderEnemyUnitConfig(r) {
   const equipments = document.createElement('div'); equipments.className = 'unit-sublist';
   (selected.equipments ||= []).forEach((equipment, index) => {
     const row = document.createElement('div'); row.className = 'unit-equipment-row';
+    const number = document.createElement('span'); number.className = 'unit-item-index'; number.textContent = `${index + 1}.`;
     const picker = enumPicker(enums.equipments, equipment, value => {
       selected.equipments[index] = value; markUnitsDirty(); renderEnemyUnitConfigPanelOnly();
     }, '搜索装备');
     const del = mkBtn('✕', () => { selected.equipments.splice(index, 1); markUnitsDirty(); renderEnemyUnitConfigPanelOnly(); });
-    del.className = 'mini danger'; row.append(picker, del); equipments.appendChild(row);
+    del.className = 'mini danger'; row.append(number, picker, del); equipments.appendChild(row);
   });
   if (!selected.equipments.length) equipments.appendChild(hint('没有装备'));
   form.appendChild(equipments);
@@ -1520,8 +1534,8 @@ function unitsForPicker() {
 /* --- deploy panel (free-form cell list) --- */
 function renderDeployPanel(r) {
   r.innerHTML = '';
-  const sec = section('🚩 可部署区域 (自由形状)');
-  sec.appendChild(hint('左键涂格设为可部署，右键擦除（都可拖动）。保存为坐标列表 [{x,y}]。'));
+  const sec = section('🚩 玩家可部署区域 (自由形状)');
+  sec.appendChild(hint('左键涂格设为玩家可部署，右键擦除（都可拖动）；敌人不能进入该区域。保存为坐标列表 [{x,y}]。'));
   const info = document.createElement('div'); info.className = 'fieldrow';
   info.innerHTML = `<label>已选格子</label><b>${state.current.deployRegion.length}</b>`;
   sec.appendChild(info);
@@ -1587,10 +1601,16 @@ function syncBrushUI() {
   const lab = $('#brushSizeLabel'); if (lab) lab.textContent = brushLabel();
 }
 function isKnownUnit(name) { return state.units.some(u => u.id === name); }
-function isDeployable(x, y) {                    // false only if the tile's terrain is explicitly non-deployable
+function isTerrainDeployable(x, y) {             // false only if the tile's terrain is explicitly non-deployable
   const m = state.current;
   const t = state.terrainById[m.tiles[y * m.width + x]];
   return !t || t.deployable !== false;
+}
+function enemyPositionIssues(x, y) {
+  const issues = [];
+  if (!isTerrainDeployable(x, y)) issues.push('不可部署地块');
+  if (inDeploy(x, y)) issues.push('玩家部署区');
+  return issues;
 }
 function terrainOptions(list) { return (list || state.terrains).map(t => ({ value: t.id, label: `${t.name} (#${t.id})` })); }
 function initials(name) { return (state.abbrevs && state.abbrevs[name]) || fallbackAbbr(name); }
