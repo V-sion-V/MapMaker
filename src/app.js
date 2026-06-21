@@ -306,7 +306,7 @@ function setMode(m) {
   $('#gridWrap').classList.toggle('hidden', flow);
   $('#coordReadout').classList.toggle('hidden', flow);
   $('#flowWorkspace').classList.toggle('hidden', !flow);
-  document.querySelectorAll('.map-toolbar-control').forEach(el => el.classList.toggle('hidden', flow));
+  $('#mapToolbar').classList.toggle('hidden', flow);
   applyGridModeClass();
   if (flow) renderFlowEditor();
   else { renderRight(); repaintAll(); }
@@ -411,9 +411,8 @@ function updateTitle() {
     $('#saveBtn').disabled = false;
     return;
   }
-  const th = state.current && state.current.theme ? ` · ${state.current.theme}` : '';
   $('#mapTitle').textContent = state.current
-    ? `${state.currentName}${th}  (${state.current.width}×${state.current.height})${state.dirty ? ' ●' : ''}`
+    ? `${state.currentName} (${state.current.width}×${state.current.height})${state.dirty ? ' ●' : ''}`
     : '未打开地图';
   $('#saveBtn').disabled = !state.current;
 }

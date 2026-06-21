@@ -9,19 +9,19 @@
 <body>
   <div id="app">
     <header id="topbar">
-      <div class="brand"><span data-ico="map"></span> MapMaker <span class="ver">v1.3</span></div>
-      <div id="mapTitle">未打开地图</div>
-      <label class="ctl map-toolbar-control">主题 <select id="mapTheme" disabled></select></label>
-      <button id="inferBtn" class="mini map-toolbar-control" title="按地块推断当前地图主题" disabled><span data-ico="search"></span> 推断</button>
+      <div class="brand"><span data-ico="map"></span> MapMaker <span class="ver">v1.4</span></div>
+      <div id="modeTabs">
+        <button data-mode="terrain" class="active"><span data-ico="palette"></span> 地形</button>
+        <button data-mode="enemy"><span data-ico="skull"></span> 敌人</button>
+        <button data-mode="deploy"><span data-ico="flag"></span> 部署区</button>
+        <button data-mode="flow"><span data-ico="route"></span> 流程</button>
+      </div>
       <div class="grow"></div>
-      <button id="refreshBtn" class="mini" title="从磁盘重新读取地图与配置"><span data-ico="refresh"></span> 刷新</button>
-      <button id="settingsBtn" class="mini" title="设置 Maps/配置文件路径"><span data-ico="settings"></span> 路径</button>
-      <button id="undoBtn" class="mini" title="撤销 (Ctrl+Z)" disabled><span data-ico="undo"></span> 撤销</button>
-      <button id="redoBtn" class="mini" title="重做 (Ctrl+Y)" disabled><span data-ico="redo"></span> 重做</button>
-      <label class="ctl map-toolbar-control">缩放
-        <input id="zoom" type="range" min="6" max="120" value="32">
-      </label>
-      <button id="saveBtn" class="primary"><span data-ico="save"></span> 保存 (Ctrl+S)</button>
+      <div class="topbar-actions">
+        <button id="refreshBtn" class="mini" title="从磁盘重新读取地图与配置"><span data-ico="refresh"></span> 刷新</button>
+        <button id="settingsBtn" class="mini" title="设置 Maps/配置文件路径"><span data-ico="settings"></span> 路径</button>
+        <button id="saveBtn" class="primary"><span data-ico="save"></span> 保存 (Ctrl+S)</button>
+      </div>
     </header>
 
     <main>
@@ -45,11 +45,16 @@
 
       <!-- CENTER: grid canvas -->
       <section id="center">
-        <div id="modeTabs">
-          <button data-mode="terrain" class="active"><span data-ico="palette"></span> 地形</button>
-          <button data-mode="enemy"><span data-ico="skull"></span> 敌人</button>
-          <button data-mode="deploy"><span data-ico="flag"></span> 部署区</button>
-          <button data-mode="flow"><span data-ico="route"></span> 流程</button>
+        <div id="mapToolbar">
+          <div id="mapTitle">未打开地图</div>
+          <label class="ctl map-toolbar-control">主题 <select id="mapTheme" disabled></select></label>
+          <button id="inferBtn" class="mini map-toolbar-control" title="按地块推断当前地图主题" disabled><span data-ico="search"></span> 推断</button>
+          <div class="grow"></div>
+          <button id="undoBtn" class="mini" title="撤销 (Ctrl+Z)" disabled><span data-ico="undo"></span> 撤销</button>
+          <button id="redoBtn" class="mini" title="重做 (Ctrl+Y)" disabled><span data-ico="redo"></span> 重做</button>
+          <label class="ctl map-toolbar-control">缩放
+            <input id="zoom" type="range" min="6" max="120" value="32">
+          </label>
         </div>
         <div id="gridWrap">
           <div id="gridScroll">

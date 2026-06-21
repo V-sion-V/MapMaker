@@ -3,6 +3,7 @@
   --text:#e6e9ee; --muted:#9aa4b2; --accent:#4f9dff; --accent2:#ffb74d;
   --danger:#e5534b; --ok:#4caf72;
   --cell-line:rgba(0,0,0,.35);
+  --topbar-height:48px; --contextbar-height:47px;
 }
 *{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#566272 #191d23}
 *::-webkit-scrollbar{width:10px;height:10px}
@@ -41,12 +42,22 @@ label.ctl{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:1
 
 #app{height:100vh;display:flex;flex-direction:column}
 
-/* top bar */
-#topbar{display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--panel);
-  border-bottom:1px solid var(--line)}
+/* top bar: brand + top-level mode tabs + global actions */
+#topbar{display:flex;align-items:stretch;gap:14px;padding:0 14px;
+  height:var(--topbar-height);flex:0 0 var(--topbar-height);
+  background:var(--panel);border-bottom:1px solid var(--line)}
 .brand{font-weight:700;font-size:15px;display:flex;align-items:center;gap:7px}
-#mapTitle{color:var(--accent2);font-weight:600}
+.topbar-actions{display:flex;align-items:center;gap:8px}
+#mapTitle{color:var(--accent2);font-weight:600;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;min-width:64px;max-width:280px;flex:0 1 auto}
 #status{color:var(--ok);font-size:12px;min-width:60px}
+
+/* top-level mode tabs fill the title bar top-to-bottom */
+#modeTabs{display:flex;align-self:stretch;gap:2px}
+#modeTabs button{height:100%;padding:0 18px;border:0;border-radius:0;background:transparent;
+  color:var(--muted);font-weight:600;font-size:13px;border-bottom:2px solid transparent}
+#modeTabs button:hover{color:var(--text);background:rgba(255,255,255,.05);border-bottom-color:transparent}
+#modeTabs button.active{color:#fff;background:rgba(79,157,255,.12);border-bottom-color:var(--accent)}
 
 main{flex:1;display:flex;min-height:0}
 
@@ -54,7 +65,8 @@ main{flex:1;display:flex;min-height:0}
 #left{width:210px;background:var(--panel);border-right:1px solid var(--line);
   display:flex;flex-direction:column;min-height:0}
 .panel-head{display:flex;align-items:center;justify-content:space-between;
-  padding:10px 12px;font-weight:600;border-bottom:1px solid var(--line)}
+  height:var(--contextbar-height);flex:0 0 var(--contextbar-height);
+  padding:0 12px;font-weight:600;border-bottom:1px solid var(--line)}
 #mapList{list-style:none;margin:0;padding:6px;overflow:auto;flex:1}
 #mapList li.map-item{padding:6px 10px 6px 18px;border-radius:6px;cursor:pointer;display:flex;
   align-items:center;gap:6px;color:var(--text)}
@@ -69,8 +81,12 @@ main{flex:1;display:flex;min-height:0}
 
 /* center */
 #center{flex:1;display:flex;flex-direction:column;min-width:0}
-#modeTabs{display:flex;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
-#modeTabs button{padding:6px 14px}
+/* map-context subtitle bar — height matches the left panel header (.panel-head) */
+#mapToolbar{display:flex;align-items:center;gap:8px;height:var(--contextbar-height);
+  flex:0 0 var(--contextbar-height);padding:0 12px;
+  border-bottom:1px solid var(--line);background:var(--panel)}
+#mapToolbar .map-toolbar-control,#mapToolbar button{flex:none;white-space:nowrap}
+#mapToolbar #zoom{width:120px}
 #gridWrap{flex:1;position:relative;overflow:hidden;background:
   repeating-conic-gradient(#23272e 0% 25%, #1f232a 0% 50%) 50%/24px 24px}
 #gridScroll{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform;
