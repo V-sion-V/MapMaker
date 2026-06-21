@@ -44,7 +44,7 @@ label.ctl{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:1
 /* top bar */
 #topbar{display:flex;align-items:center;gap:14px;padding:8px 14px;background:var(--panel);
   border-bottom:1px solid var(--line)}
-.brand{font-weight:700;font-size:15px}
+.brand{font-weight:700;font-size:15px;display:flex;align-items:center;gap:7px}
 #mapTitle{color:var(--accent2);font-weight:600}
 #status{color:var(--ok);font-size:12px;min-width:60px}
 
@@ -113,6 +113,107 @@ main{flex:1;display:flex;min-height:0}
 #emptyHint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted)}
 #coordReadout{padding:6px 12px;border-top:1px solid var(--line);background:var(--panel);
   color:var(--muted);font-size:12px}
+
+/* level flow editor */
+#flowWorkspace{flex:1;min-height:0;overflow:auto;background:
+  radial-gradient(circle at 75% -10%,rgba(79,157,255,.13),transparent 34%),var(--bg)}
+.flow-toolbar{position:sticky;top:0;z-index:12;display:flex;align-items:center;gap:16px;
+  padding:16px 22px;background:rgba(38,43,51,.96);border-bottom:1px solid var(--line);
+  backdrop-filter:blur(10px)}
+.flow-toolbar h1{margin:0 0 2px;font-size:17px}
+.flow-toolbar p{margin:0;color:var(--muted);font-size:11px}
+#flowStats{color:var(--muted);font-size:12px;white-space:nowrap}
+#flowStageList{display:flex;flex-direction:column;gap:26px;padding:22px;max-width:1500px;margin:0 auto}
+.flow-empty{min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:7px;border:1px dashed #4a5564;border-radius:12px;color:var(--muted)}
+.flow-empty b{color:var(--text);font-size:15px}
+.flow-stage{display:flex;flex-direction:column;gap:10px}
+.flow-stage-head{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:11px;
+  padding:0 4px;text-transform:uppercase;letter-spacing:.45px}
+.flow-stage-head::after{content:"";height:1px;flex:1;background:linear-gradient(90deg,var(--line),transparent)}
+.flow-stage-title{color:var(--accent2);font-size:13px;font-weight:800}
+.flow-theme-card{background:var(--panel);border:1px solid var(--line);border-radius:11px;overflow:hidden;
+  box-shadow:0 5px 16px rgba(0,0,0,.16)}
+.flow-theme-card.expanded{border-color:#49627f;box-shadow:0 8px 24px rgba(0,0,0,.24)}
+.flow-theme-header{min-height:62px;display:grid;grid-template-columns:34px minmax(190px,.75fr) minmax(270px,1.25fr) auto;
+  align-items:center;gap:10px;padding:9px 12px}
+.flow-theme-header:hover{background:rgba(255,255,255,.018)}
+.flow-theme-toggle{width:29px;height:29px;padding:0;border-color:transparent;background:transparent;
+  color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
+.flow-theme-toggle:hover{color:var(--text);border-color:transparent}
+.flow-theme-toggle .ico{width:18px;height:18px}
+.flow-theme-heading,.flow-theme-summary{cursor:pointer;min-width:0}
+.flow-theme-heading{display:flex;align-items:center;gap:10px}
+.flow-theme-heading h2{margin:0;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.flow-theme-badges{display:flex;gap:5px;flex-wrap:wrap}
+.flow-theme-summary{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12px}
+.flow-badge{display:inline-flex;align-items:center;min-height:20px;padding:1px 7px;border-radius:10px;
+  font-size:10px;color:#c8d1dc;background:#333a44;white-space:nowrap}
+.flow-badge.stage{color:#aad2ff;background:#263b54}
+.flow-badge.weight{color:#ffd39b;background:#4a3826}
+.flow-badge.warning{color:#ffe0a6;background:#533e20;border:1px solid #74582e}
+.flow-theme-body{border-top:1px solid var(--line);background:#232830}
+.flow-theme-settings{display:flex;align-items:end;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.flow-setting{display:flex;flex-direction:column;gap:3px;color:var(--muted);font-size:10px}
+.flow-setting select{min-width:170px}
+.flow-setting input[type=number]{width:90px}
+.flow-theme-layout{display:grid;grid-template-columns:230px minmax(0,1fr);min-height:270px}
+.flow-map-palette{padding:14px;border-right:1px solid var(--line);background:#20252c}
+.flow-subhead{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-size:11px}
+.flow-subhead b{color:var(--text);font-size:12px}
+.flow-palette-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:390px;overflow:auto;padding-right:4px}
+.flow-palette-map{display:flex;align-items:center;gap:8px;padding:7px 8px;border:1px solid var(--line);
+  border-radius:7px;background:var(--panel2);cursor:grab;user-select:none}
+.flow-palette-map:hover,.flow-palette-map:focus{border-color:var(--accent);outline:none;background:#35404d}
+.flow-palette-map:active{cursor:grabbing}
+.flow-palette-map>span:first-child{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.flow-reference-count{display:flex;align-items:center;justify-content:center;min-width:23px;height:19px;padding:0 5px;
+  border-radius:10px;background:#1c2127;color:var(--accent2);font-size:10px;font-weight:800}
+.flow-reference-warnings{display:flex;flex-direction:column;gap:3px;margin-top:12px;padding:9px;
+  border:1px solid #6d512b;border-radius:7px;background:#392d1e;color:#e8c992;font-size:10px}
+.flow-reference-warnings b{color:#ffd995}
+.flow-turn-panel{min-width:0;padding:14px}
+.flow-turn-toolbar{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.flow-turn-toolbar .flow-subhead{flex:1;justify-content:flex-start}
+.flow-turn-board{display:flex;gap:10px;align-items:stretch;overflow-x:auto;padding:2px 2px 12px;min-height:206px}
+.flow-turn-card{display:flex;flex-direction:column;flex:0 0 210px;min-width:0;border:1px solid var(--line);
+  border-radius:9px;background:var(--panel);overflow:hidden}
+.flow-turn-head{display:flex;align-items:center;gap:7px;padding:7px 8px;border-bottom:1px solid var(--line);
+  background:#2a3038}
+.flow-turn-head>b{font-size:12px}
+.flow-turn-head>span{color:var(--muted);font-size:10px;white-space:nowrap}
+.flow-turn-actions{display:flex;gap:3px;margin-left:auto}
+.flow-turn-actions button{padding:1px 5px;min-width:23px}
+.flow-turn-maps{display:flex;flex:1;flex-direction:column;padding:7px;min-height:156px}
+.flow-turn-map{display:flex;align-items:center;gap:5px;min-height:32px;padding:5px 6px;border:1px solid #47515e;
+  border-radius:6px;background:#323a45;user-select:none}
+.flow-turn-map.invalid{border-color:#8a6433;background:#423522;color:#ffe0a6}
+.flow-turn-map>span:nth-child(2){min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.flow-map-grip{color:var(--muted);display:inline-flex;align-items:center;cursor:grab}
+.flow-map-grip:active{cursor:grabbing}
+.flow-map-grip .ico{width:15px;height:15px}
+.flow-map-weight{width:46px;flex:none;padding:2px 4px;text-align:center;font-size:11px;
+  background:#1b1f25;border:1px solid var(--line);border-radius:5px;color:var(--text);user-select:text}
+.flow-map-weight:focus{border-color:var(--accent);outline:none}
+.flow-turn-map button{padding:0;border:0;background:transparent;color:var(--muted);line-height:1}
+.flow-turn-map button .ico{width:15px;height:15px}
+.flow-turn-map button:hover{color:var(--danger)}
+.flow-insert-zone{height:7px;flex:none;border-radius:4px;transition:height .12s,background .12s,color .12s}
+.flow-insert-zone.end{height:25px;display:flex;align-items:center;justify-content:center;margin-top:2px;
+  border:1px dashed transparent;color:transparent;font-size:10px}
+.flow-insert-zone.end.empty{height:100%;min-height:90px;border-color:#46515f;color:var(--muted)}
+.flow-dragging .flow-insert-zone{height:13px}
+.flow-dragging .flow-insert-zone.end{height:29px;border-color:#46515f;color:var(--muted)}
+.flow-insert-zone.flow-drop-active{height:30px!important;background:rgba(79,157,255,.18)!important;
+  border:1px dashed var(--accent)!important;color:#cde5ff!important}
+.flow-add-first-turn{flex:0 0 210px;min-height:190px;border-style:dashed;color:var(--muted);background:transparent}
+
+@media (max-width:1050px){
+  .flow-theme-header{grid-template-columns:34px minmax(150px,1fr) auto}
+  .flow-theme-summary{grid-column:2/3;padding-bottom:3px}
+  .flow-theme-delete{grid-column:3;grid-row:1/3}
+  .flow-theme-layout{grid-template-columns:190px minmax(0,1fr)}
+}
 
 /* right */
 #right{width:360px;background:var(--panel);border-left:1px solid var(--line);
@@ -270,3 +371,36 @@ main{flex:1;display:flex;min-height:0}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
   background:var(--ok);color:#fff;padding:8px 16px;border-radius:8px;z-index:60;
   box-shadow:0 6px 20px rgba(0,0,0,.4)}
+
+/* ------------------------------------------------------------------ *
+ * Inline SVG icons (monochrome, inherit currentColor)
+ * ------------------------------------------------------------------ */
+.ico{width:1.05em;height:1.05em;flex:none;vertical-align:-0.16em;pointer-events:none}
+/* lay out icon + label inline wherever an .ico appears */
+button:has(.ico),#modeTabs button{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+h2:has(.ico),h3:has(.ico){display:flex;align-items:center;gap:9px}
+.config-modal-head h2:has(.ico){flex:1}
+.config-modal-close .ico{width:18px;height:18px}
+.tcfg .row .del .ico,.theme-row .del .ico{width:14px;height:14px}
+.enemy-row .x{display:inline-flex;align-items:center}
+.enemy-row .x .ico{width:14px;height:14px}
+.preset-tab{display:inline-flex;align-items:center;gap:5px}
+.path-row .path-ok{display:inline-flex;align-items:center;justify-content:center}
+.path-row .path-ok .ico{width:14px;height:14px}
+
+/* version badge next to the brand */
+.ver{font-weight:600;font-size:11px;color:var(--muted);background:var(--panel2);
+  border:1px solid var(--line);border-radius:10px;padding:1px 7px;letter-spacing:.3px}
+
+/* ------------------------------------------------------------------ *
+ * Custom alert / confirm dialog (stacks above #modalLayer)
+ * ------------------------------------------------------------------ */
+#dialogLayer{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;
+  align-items:center;justify-content:center;z-index:70}
+.dialog-modal{min-width:320px;max-width:min(560px,calc(100vw - 48px))}
+.dialog-modal h2{margin:0 0 12px;font-size:15px}
+.dialog-message{color:var(--text);font-size:13px;line-height:1.6;white-space:pre-wrap;
+  word-break:break-word;margin-bottom:16px}
+.dialog-modal .actions{display:flex;justify-content:flex-end;gap:8px}
+.dialog-modal .danger-confirm{background:var(--danger);border-color:var(--danger);color:#fff}
+.dialog-modal .danger-confirm:hover{filter:brightness(1.08)}

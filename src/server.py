@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import json
+import math
 import socket
 import threading
 import webbrowser
@@ -36,6 +37,7 @@ DEFAULT_TILETYPE_FILE = os.path.join(CONFIG_DIR, "TileType.cs")
 DEFAULT_PROFESSION_FILE = os.path.join(CONFIG_DIR, "Profession.cs")
 DEFAULT_SKILL_FILE = os.path.join(CONFIG_DIR, "Skill.cs")
 DEFAULT_EQUIPMENT_FILE = os.path.join(CONFIG_DIR, "Equipment.cs")
+DEFAULT_MAP_THEMES_FILE = os.path.join(CONFIG_DIR, "MapThemes.json")
 
 # Runtime paths — overridden from prefs.json by apply_prefs() (called at import).
 MAPS_DIR = DEFAULT_MAPS_DIR
@@ -44,6 +46,7 @@ TILETYPE_FILE = DEFAULT_TILETYPE_FILE
 PROFESSION_FILE = DEFAULT_PROFESSION_FILE
 SKILL_FILE = DEFAULT_SKILL_FILE
 EQUIPMENT_FILE = DEFAULT_EQUIPMENT_FILE
+MAP_THEMES_FILE = DEFAULT_MAP_THEMES_FILE
 
 NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
@@ -286,6 +289,7 @@ PREF_DEFAULTS = {
     "professionFile": DEFAULT_PROFESSION_FILE,
     "skillFile": DEFAULT_SKILL_FILE,
     "equipmentFile": DEFAULT_EQUIPMENT_FILE,
+    "mapThemesFile": DEFAULT_MAP_THEMES_FILE,
 }
 
 
@@ -327,7 +331,7 @@ def save_prefs(prefs):
 
 def apply_prefs(prefs):
     """Point the runtime path globals at the user's chosen locations (or defaults)."""
-    global MAPS_DIR, ENEMY_FILE, TILETYPE_FILE, PROFESSION_FILE, SKILL_FILE, EQUIPMENT_FILE
+    global MAPS_DIR, ENEMY_FILE, TILETYPE_FILE, PROFESSION_FILE, SKILL_FILE, EQUIPMENT_FILE, MAP_THEMES_FILE
     prefs = normalize_prefs(prefs)
     MAPS_DIR = prefs.get("mapsDir") or DEFAULT_MAPS_DIR
     ENEMY_FILE = prefs.get("enemyFile") or DEFAULT_ENEMY_FILE
@@ -335,24 +339,27 @@ def apply_prefs(prefs):
     PROFESSION_FILE = prefs.get("professionFile") or DEFAULT_PROFESSION_FILE
     SKILL_FILE = prefs.get("skillFile") or DEFAULT_SKILL_FILE
     EQUIPMENT_FILE = prefs.get("equipmentFile") or DEFAULT_EQUIPMENT_FILE
+    MAP_THEMES_FILE = prefs.get("mapThemesFile") or DEFAULT_MAP_THEMES_FILE
 
 
 def prefs_payload():
     raw = load_prefs()                          # only keys the user explicitly overrode
     keys = ("mapsDir", "enemyFile", "tileTypeFile", "professionFile",
-            "skillFile", "equipmentFile")
+            "skillFile", "equipmentFile", "mapThemesFile")
     return {
         "set": {key: raw.get(key, "") for key in keys},
         "effective": {"mapsDir": MAPS_DIR, "enemyFile": ENEMY_FILE,
                       "tileTypeFile": TILETYPE_FILE, "professionFile": PROFESSION_FILE,
-                      "skillFile": SKILL_FILE, "equipmentFile": EQUIPMENT_FILE},
+                      "skillFile": SKILL_FILE, "equipmentFile": EQUIPMENT_FILE,
+                      "mapThemesFile": MAP_THEMES_FILE},
         "defaults": dict(PREF_DEFAULTS),
         "exists": {"mapsDir": os.path.isdir(MAPS_DIR),
                    "enemyFile": os.path.isfile(ENEMY_FILE),
                    "tileTypeFile": os.path.isfile(TILETYPE_FILE),
                    "professionFile": os.path.isfile(PROFESSION_FILE),
                    "skillFile": os.path.isfile(SKILL_FILE),
-                   "equipmentFile": os.path.isfile(EQUIPMENT_FILE)},
+                   "equipmentFile": os.path.isfile(EQUIPMENT_FILE),
+                   "mapThemesFile": os.path.isfile(MAP_THEMES_FILE)},
     }
 
 
@@ -444,6 +451,70 @@ def safe_map_file(name):
 
 
 # --------------------------------------------------------------------------- #
+# Level-flow configuration
+# --------------------------------------------------------------------------- #
+def load_map_themes():
+    """Load the stage/theme/turn flow config, or an empty editable document."""
+    if not os.path.isfile(MAP_THEMES_FILE):
+        return {"mapThemes": []}
+    with open(MAP_THEMES_FILE, encoding="utf-8-sig") as f:
+        return json.load(f)
+
+
+def validate_map_themes(obj):
+    """Validate the structural contract while allowing future extra fields."""
+    errors = []
+    if not isinstance(obj, dict):
+        return ["根节点必须是 JSON 对象"]
+    themes = obj.get("mapThemes")
+    if not isinstance(themes, list):
+        return ["mapThemes 必须是数组"]
+    for ti, theme in enumerate(themes):
+        base = "mapThemes[%d]" % ti
+        if not isinstance(theme, dict):
+            errors.append(base + " 必须是对象")
+            continue
+        if not isinstance(theme.get("name"), str) or not theme.get("name", "").strip():
+            errors.append(base + ".name 必须是非空字符串")
+        stage = theme.get("stage")
+        if isinstance(stage, bool) or not isinstance(stage, int) or stage < 1:
+            errors.append(base + ".stage 必须是大于等于 1 的整数")
+        weight = theme.get("weight")
+        if (isinstance(weight, bool) or not isinstance(weight, (int, float)) or
+                not math.isfinite(weight) or weight < 0):
+            errors.append(base + ".weight 必须是大于等于 0 的数字")
+        turns = theme.get("turnSequence")
+        if not isinstance(turns, list):
+            errors.append(base + ".turnSequence 必须是数组")
+            continue
+        for turn_i, turn in enumerate(turns):
+            turn_base = "%s.turnSequence[%d]" % (base, turn_i)
+            if not isinstance(turn, dict):
+                errors.append(turn_base + " 必须是对象")
+                continue
+            map_set = turn.get("mapSet")
+            if not isinstance(map_set, list):
+                errors.append(turn_base + ".mapSet 必须是数组")
+                continue
+            for map_i, entry in enumerate(map_set):
+                entry_base = "%s.mapSet[%d]" % (turn_base, map_i)
+                if isinstance(entry, str):                       # legacy bare-name, tolerated
+                    if not entry.strip():
+                        errors.append(entry_base + " 必须是非空字符串")
+                    continue
+                if not isinstance(entry, dict):
+                    errors.append(entry_base + " 必须是 {mapName, weight} 对象")
+                    continue
+                if not isinstance(entry.get("mapName"), str) or not entry.get("mapName", "").strip():
+                    errors.append(entry_base + ".mapName 必须是非空字符串")
+                w = entry.get("weight")
+                if (isinstance(w, bool) or not isinstance(w, (int, float)) or
+                        not math.isfinite(w) or w < 0):
+                    errors.append(entry_base + ".weight 必须是大于等于 0 的数字")
+    return errors
+
+
+# --------------------------------------------------------------------------- #
 # HTTP handler
 # --------------------------------------------------------------------------- #
 class Handler(BaseHTTPRequestHandler):
@@ -489,6 +560,9 @@ class Handler(BaseHTTPRequestHandler):
                             "theme": read_map_theme(os.path.join(MAPS_DIR, fn)),
                         })
                 return self._send_json({"maps": maps})
+
+            if path == "/api/map-themes":
+                return self._send_json(load_map_themes())
 
             if path.startswith("/api/maps/"):
                 name = urllib.parse.unquote(path[len("/api/maps/"):])
@@ -537,6 +611,19 @@ class Handler(BaseHTTPRequestHandler):
                     f.write(format_map(obj))
                 return self._send_json({"ok": True})
 
+            if path == "/api/map-themes":
+                obj = json.loads(body)
+                errors = validate_map_themes(obj)
+                if errors:
+                    return self._send_json({"ok": False, "errors": errors}, 400)
+                parent = os.path.dirname(os.path.abspath(MAP_THEMES_FILE))
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+                with open(MAP_THEMES_FILE, "w", encoding="utf-8") as f:
+                    json.dump(obj, f, indent=2, ensure_ascii=False)
+                    f.write("\n")
+                return self._send_json({"ok": True})
+
             if path == "/api/terrains":
                 obj = json.loads(body)
                 with open(TERRAIN_FILE, "w", encoding="utf-8") as f:
@@ -561,7 +648,8 @@ class Handler(BaseHTTPRequestHandler):
                                          ("tileTypeFile", obj.get("tileTypeFile"), False),
                                          ("professionFile", obj.get("professionFile"), False),
                                          ("skillFile", obj.get("skillFile"), False),
-                                         ("equipmentFile", obj.get("equipmentFile"), False)]:
+                                         ("equipmentFile", obj.get("equipmentFile"), False),
+                                         ("mapThemesFile", obj.get("mapThemesFile"), False)]:
                     val = (val or "").strip()
                     if not val or _same_path(val, PREF_DEFAULTS[key]):
                         prefs.pop(key, None)                 # empty -> fall back to default
@@ -662,6 +750,7 @@ def main():
     print("  Profession enum:      " + PROFESSION_FILE)
     print("  Skill enum:           " + SKILL_FILE)
     print("  Equipment enum:       " + EQUIPMENT_FILE)
+    print("  MapThemes file:       " + MAP_THEMES_FILE)
     print("  Close this window to stop the editor.")
     print("=" * 56)
 

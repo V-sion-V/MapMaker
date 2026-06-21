@@ -1,7 +1,13 @@
 {
   "themes": [
     "Grassland",
-    "Desert"
+    "Desert",
+    "TropicalGrassland",
+    "RedDesert",
+    "Volcano",
+    "IceField",
+    "Asgard",
+    "Hell"
   ],
   "terrains": [
     {

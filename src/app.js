@@ -5,11 +5,15 @@
  * ------------------------------------------------------------------ */
 const API = {
   async maps()        { return (await fetch('/api/maps')).json(); },
+  async mapThemes()   { return (await fetch('/api/map-themes')).json(); },
   async map(n)        { return (await fetch('/api/maps/' + encodeURIComponent(n))).json(); },
   saveMap(n, obj)     { return fetch('/api/maps/' + encodeURIComponent(n),
                           { method:'PUT', headers:{'Content-Type':'application/json'},
                             body: JSON.stringify(obj) }); },
   delMap(n)           { return fetch('/api/maps/' + encodeURIComponent(n), { method:'DELETE' }); },
+  saveMapThemes(obj)  { return fetch('/api/map-themes',
+                          { method:'PUT', headers:{'Content-Type':'application/json'},
+                            body: JSON.stringify(obj) }); },
   async terrains()    { return (await fetch('/api/terrains')).json(); },
   saveTerrains(obj)   { return fetch('/api/terrains',
                           { method:'PUT', headers:{'Content-Type':'application/json'},
@@ -39,6 +43,8 @@ const state = {
   unitsDirty: false, unitsSavedJson: '',
   abbrevs: {},                    // unit name -> unique 3-letter map marker
   maps: [],                       // [{name, theme}]
+  flowConfig: { mapThemes: [] }, flowDirty: false, flowSavedJson: '',
+  flowExpanded: new WeakSet(), flowDrag: null,
   current: null, currentName: null, dirty: false, savedJson: '',
   mode: 'terrain',
   activeTerrainId: 1, tool: 'brush',
@@ -54,19 +60,73 @@ const state = {
 const $ = sel => document.querySelector(sel);
 
 /* ------------------------------------------------------------------ *
+ * Inline SVG icons (single source of truth; monochrome, currentColor)
+ * Used both for static markup (via [data-ico] hydration) and dynamic UI.
+ * ------------------------------------------------------------------ */
+const ICON_PATHS = {
+  map:       '<path d="M14.5 4.5 9 2 3.6 4.7A1 1 0 0 0 3 5.6v13.1a1 1 0 0 0 1.4.9L9 17.5l6 2.5 5.4-2.7a1 1 0 0 0 .6-.9V3.3a1 1 0 0 0-1.4-.9z"/><path d="M9 2v15.5"/><path d="M15 6.5V22"/>',
+  search:    '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  refresh:   '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  settings:  '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  undo:      '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H8"/>',
+  redo:      '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H16"/>',
+  save:      '<path d="M15.2 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.8a2 2 0 0 0-.6-1.4l-3.8-3.8A2 2 0 0 0 15.2 3z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>',
+  tag:       '<path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/>',
+  plus:      '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  chevronRight: '<path d="m9 18 6-6-6-6"/>',
+  chevronDown:  '<path d="m6 9 6 6 6-6"/>',
+  arrowLeft:  '<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>',
+  arrowRight: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  arrowUp:    '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
+  arrowDown:  '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+  x:          '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  trash:      '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',
+  check:      '<path d="M20 6 9 17l-5-5"/>',
+  download:   '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+  grip:       '<circle cx="9" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.4" fill="currentColor" stroke="none"/>',
+  palette:    '<circle cx="13.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="17.5" cy="10.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="8.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="6.5" cy="12.5" r="1.2" fill="currentColor" stroke="none"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.6-.7 1.6-1.7 0-.4-.2-.8-.4-1.1-.3-.3-.4-.6-.4-1.1a1.6 1.6 0 0 1 1.6-1.6h2c3 0 5.6-2.5 5.6-5.6C22 6 17.5 2 12 2z"/>',
+  skull:      '<path d="M15 22a1 1 0 0 0 1-1v-1a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20v1a1 1 0 0 0 1 1z"/><circle cx="15" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1" fill="currentColor" stroke="none"/><path d="M11 17h2"/>',
+  flag:       '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+  route:      '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
+  brush:      '<path d="m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z"/>',
+  square:     '<rect x="4" y="4" width="16" height="16" rx="2"/>',
+  copy:       '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  bucket:     '<path d="M19 11 9 1 7.6 2.4l2.1 2.1L3.5 10.7a2 2 0 0 0 0 2.8l5 5a2 2 0 0 0 2.8 0L19 11z"/><path d="m5 11 8 0"/><path d="M20.5 15.5s1.5 2 1.5 3a1.5 1.5 0 0 1-3 0c0-1 1.5-3 1.5-3z" fill="currentColor" stroke="none"/>',
+};
+function icon(name) {
+  const p = ICON_PATHS[name];
+  if (!p) return '';
+  return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+}
+/* Replace every <span data-ico="name"> placeholder in static markup with its SVG. */
+function hydrateIcons(root) {
+  (root || document).querySelectorAll('[data-ico]').forEach(el => { el.outerHTML = icon(el.dataset.ico); });
+}
+/* Build a button with a leading icon (mirrors mkBtn but renders an SVG). */
+function mkIconBtn(name, label, fn) {
+  const b = document.createElement('button'); b.className = 'mini';
+  b.innerHTML = icon(name) + (label ? `<span>${escapeHtml(label)}</span>` : '');
+  if (label) b.title = label;
+  b.onclick = fn; return b;
+}
+
+/* ------------------------------------------------------------------ *
  * Init
  * ------------------------------------------------------------------ */
 async function init() {
+  hydrateIcons();
   try {
-    const t = await API.terrains();
+    const [t, e, enemyEnums, m, flow] = await Promise.all([
+      API.terrains(), API.enemies(), API.enemyEnums(), API.maps(), API.mapThemes(),
+    ]);
     state.terrains = t.terrains || [];
     state.themes = t.themes || [];
     indexTerrains();
-    const e = await API.enemies();   setEnemyConfig(e);
-    setEnemyEnums(await API.enemyEnums());
-    const m = await API.maps();      state.maps = m.maps || [];
+    setEnemyConfig(e); setEnemyEnums(enemyEnums);
+    state.maps = m.maps || [];
+    setFlowConfig(flow);
   } catch (err) {
-    alert('无法连接本地服务，请确认 start.bat 正在运行。\n' + err);
+    await showAlert('无法连接本地服务，请确认 start.bat 正在运行。\n' + err, '连接失败');
     return;
   }
   state.activeTerrainId = (state.terrains.find(t => t.id !== 0) || state.terrains[0] || {id:0}).id;
@@ -87,16 +147,18 @@ function indexTerrains() {
 
 /* Re-read maps + configs from disk (server reads fresh each request). */
 async function refreshAll() {
-  if ((state.dirty || state.unitsDirty) && !confirm('刷新会丢弃未保存的地图或 EnemyUnit 修改并从磁盘重读，继续？')) return;
-  let t, e, enemyEnums, m;
+  if ((state.dirty || state.unitsDirty || state.flowDirty) &&
+      !await showConfirm('刷新会丢弃未保存的地图、EnemyUnit 或关卡流程修改并从磁盘重读，继续？')) return;
+  let t, e, enemyEnums, m, flow;
   try {
-    [t, e, enemyEnums, m] = await Promise.all([
-      API.terrains(), API.enemies(), API.enemyEnums(), API.maps(),
+    [t, e, enemyEnums, m, flow] = await Promise.all([
+      API.terrains(), API.enemies(), API.enemyEnums(), API.maps(), API.mapThemes(),
     ]);
-  } catch (err) { return alert('刷新失败：' + err); }
+  } catch (err) { return showAlert('刷新失败：' + err); }
   state.dirty = false;                       // already confirmed -> skip loadMap's prompt
   state.terrains = t.terrains || []; state.themes = t.themes || [];
   indexTerrains(); setEnemyConfig(e); setEnemyEnums(enemyEnums); state.maps = m.maps || [];
+  setFlowConfig(flow);
   const keep = (state.currentName && state.maps.some(x => x.name === state.currentName))
     ? state.currentName : (state.maps[0] && state.maps[0].name);
   recomputeAbbrevs(); populateMapThemeSelect(); renderMapList();
@@ -107,6 +169,7 @@ async function refreshAll() {
     $('#emptyHint').classList.remove('hidden');
     updateTitle(); renderRight(); updateUndoButtons();
   }
+  if (state.mode === 'flow') renderFlowEditor();
   toast('已从磁盘刷新');
 }
 
@@ -115,7 +178,7 @@ async function openSettings() {
   const data = await API.prefs();
   const layer = $('#modalLayer'); layer.classList.remove('hidden');
   const box = document.createElement('div'); box.className = 'modal'; box.style.minWidth = '560px';
-  box.innerHTML = '<h2>⚙ 路径设置</h2>';
+  box.innerHTML = `<h2>${icon('settings')}<span>路径设置</span></h2>`;
   box.appendChild(hint('指向你游戏工程里的实际文件，即可直接编辑/读取。留空=用默认内置路径。改动会立即保存到 config/prefs.json，下次启动自动加载。'));
 
   const fields = [
@@ -125,6 +188,7 @@ async function openSettings() {
     { key: 'professionFile', label: 'Profession 文件', kind: 'file', defaultLabel: '软件目录/config/Profession.cs' },
     { key: 'skillFile',      label: 'Skill 文件', kind: 'file', defaultLabel: '软件目录/config/Skill.cs' },
     { key: 'equipmentFile',  label: 'Equipment 文件', kind: 'file', defaultLabel: '软件目录/config/Equipment.cs' },
+    { key: 'mapThemesFile',  label: 'MapThemes 文件', kind: 'file', defaultLabel: '软件目录/config/MapThemes.json' },
   ];
   const inputs = {};
   for (const f of fields) {
@@ -136,11 +200,11 @@ async function openSettings() {
     const inp = inputEl('text', (data.set && data.set[f.key]) || '');
     inp.placeholder = `默认：${f.defaultLabel}`;
     const ex = document.createElement('span'); ex.className = 'path-ok';
-    ex.textContent = data.exists[f.key] ? '✓' : '✗'; ex.style.color = data.exists[f.key] ? 'var(--ok)' : 'var(--danger)';
+    ex.innerHTML = icon(data.exists[f.key] ? 'check' : 'x'); ex.style.color = data.exists[f.key] ? 'var(--ok)' : 'var(--danger)';
     const browse = mkBtn('浏览…', async () => {
       const r = await API.pick(f.kind, f.label);
-      if (r.error) return alert('系统选择框不可用，请直接粘贴路径。\n(' + r.error + ')');
-      if (r.path) { inp.value = r.path; ex.textContent = '✓'; ex.style.color = 'var(--ok)'; }
+      if (r.error) return showAlert('系统选择框不可用，请直接粘贴路径。\n(' + r.error + ')');
+      if (r.path) { inp.value = r.path; ex.innerHTML = icon('check'); ex.style.color = 'var(--ok)'; }
     });
     inputs[f.key] = inp;
     row.append(lab, inp, browse, ex); box.appendChild(row);
@@ -151,12 +215,12 @@ async function openSettings() {
   const cancel = mkBtn('取消', close);
   const ok = document.createElement('button'); ok.className = 'primary'; ok.textContent = '保存并重载';
   ok.onclick = async () => {
-    const discarding = state.dirty || state.unitsDirty;
-    if (discarding && !confirm('更换路径并重载会丢弃未保存的地图或 EnemyUnit 修改，继续？')) return;
+    const discarding = state.dirty || state.unitsDirty || state.flowDirty;
+    if (discarding && !await showConfirm('更换路径并重载会丢弃未保存的地图、EnemyUnit 或关卡流程修改，继续？')) return;
     const body = {}; for (const f of fields) body[f.key] = inputs[f.key].value.trim();
     const r = await API.savePrefs(body).then(x => x.json());
-    if (!r.ok) return alert('保存失败：\n' + (r.errors || ['未知错误']).join('\n'));
-    if (discarding) { state.dirty = false; state.unitsDirty = false; }
+    if (!r.ok) return showAlert('保存失败：\n' + (r.errors || ['未知错误']).join('\n'));
+    if (discarding) { state.dirty = false; state.unitsDirty = false; state.flowDirty = false; }
     close(); await refreshAll();
   };
   actions.append(reset, cancel, ok); box.appendChild(actions);
@@ -177,13 +241,14 @@ function bindUI() {
   $('#renameBtn').onclick  = renameMap;
   $('#resizeBtn').onclick  = resizeMap;
   $('#delBtn').onclick      = deleteMap;
-  $('#saveBtn').onclick    = saveMap;
+  $('#saveBtn').onclick    = saveCurrent;
   $('#refreshBtn').onclick = refreshAll;
   $('#settingsBtn').onclick = openSettings;
   $('#undoBtn').onclick    = undo;
   $('#redoBtn').onclick    = redo;
   $('#mapTheme').onchange  = onMapThemeChange;
   $('#inferBtn').onclick   = inferCurrentTheme;
+  $('#addFlowThemeBtn').onclick = addFlowTheme;
   const zoom = $('#zoom'); zoom.value = state.cellSize;
   zoom.oninput = e => setZoom(+e.target.value);     // zoom around the viewport center
 
@@ -220,14 +285,14 @@ function bindUI() {
   window.addEventListener('mouseup', () => { if (state.panDrag) { state.panDrag = null; wrap.style.cursor = ''; } endDrag(); });
   window.addEventListener('keydown', e => {
     const typing = /^(INPUT|SELECT|TEXTAREA)$/.test((e.target || {}).tagName || '');
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveMap(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveCurrent(); return; }
     if (typing) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
     else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
     else if (e.key === 'Delete' && state.mode === 'enemy' && state.selectedEnemy) deleteSelectedEnemy();
   });
   window.addEventListener('beforeunload', e => {
-    if (state.dirty || state.unitsDirty) { e.preventDefault(); e.returnValue = ''; }
+    if (state.dirty || state.unitsDirty || state.flowDirty) { e.preventDefault(); e.returnValue = ''; }
   });
 }
 
@@ -235,9 +300,17 @@ function setMode(m) {
   state.mode = m;
   document.querySelectorAll('#modeTabs button').forEach(b =>
     b.classList.toggle('active', b.dataset.mode === m));
+  const flow = m === 'flow';
+  $('#left').classList.toggle('hidden', flow);
+  $('#right').classList.toggle('hidden', flow);
+  $('#gridWrap').classList.toggle('hidden', flow);
+  $('#coordReadout').classList.toggle('hidden', flow);
+  $('#flowWorkspace').classList.toggle('hidden', !flow);
+  document.querySelectorAll('.map-toolbar-control').forEach(el => el.classList.toggle('hidden', flow));
   applyGridModeClass();
-  renderRight();
-  repaintAll();
+  if (flow) renderFlowEditor();
+  else { renderRight(); repaintAll(); }
+  updateTitle(); updateUndoButtons();
 }
 
 function applyGridModeClass() {
@@ -286,15 +359,18 @@ function applySnapshot(json) {
   renderGrid(); renderRight(); renderMapList();
 }
 function updateUndoButtons() {
-  $('#undoBtn').disabled = !state.undoStack.length;
-  $('#redoBtn').disabled = !state.redoStack.length;
+  const flow = state.mode === 'flow';
+  $('#undoBtn').classList.toggle('hidden', flow);
+  $('#redoBtn').classList.toggle('hidden', flow);
+  $('#undoBtn').disabled = flow || !state.undoStack.length;
+  $('#redoBtn').disabled = flow || !state.redoStack.length;
 }
 
 /* ------------------------------------------------------------------ *
  * Map loading / management
  * ------------------------------------------------------------------ */
 async function confirmDiscard() {
-  return !state.dirty || confirm('当前地图有未保存的修改，确定放弃并切换吗？');
+  return !state.dirty || await showConfirm('当前地图有未保存的修改，确定放弃并切换吗？');
 }
 
 async function loadMap(name) {
@@ -330,6 +406,11 @@ function setCurrent(name, m) {
 }
 
 function updateTitle() {
+  if (state.mode === 'flow') {
+    $('#mapTitle').textContent = `关卡流程${state.flowDirty ? ' ●' : ''}`;
+    $('#saveBtn').disabled = false;
+    return;
+  }
   const th = state.current && state.current.theme ? ` · ${state.current.theme}` : '';
   $('#mapTitle').textContent = state.current
     ? `${state.currentName}${th}  (${state.current.width}×${state.current.height})${state.dirty ? ' ●' : ''}`
@@ -351,7 +432,11 @@ async function saveMap() {
     state.savedJson = snapshot(); state.dirty = false;
     setMapEntryTheme(state.currentName, state.current.theme || '');
     updateTitle(); renderMapList(); toast('已保存 ' + state.currentName);
-  } else alert('保存失败');
+  } else showAlert('保存失败');
+}
+
+function saveCurrent() {
+  return state.mode === 'flow' ? saveFlowConfig() : saveMap();
 }
 
 async function newMap() {
@@ -365,8 +450,8 @@ async function newMap() {
     { key:'h', label:'高 (行)', type:'number', value:10 },
   ]);
   if (!v) return;
-  if (!/^[A-Za-z0-9_\-]+$/.test(v.name)) return alert('名称只能用字母/数字/下划线/连字符');
-  if (mapNameExists(v.name)) return alert('已存在同名地图');
+  if (!/^[A-Za-z0-9_\-]+$/.test(v.name)) return showAlert('名称只能用字母/数字/下划线/连字符');
+  if (mapNameExists(v.name)) return showAlert('已存在同名地图');
   const W = clamp(+v.w, 1, 64), H = clamp(+v.h, 1, 64);
   const theme = v.theme || '';
   const fillT = state.terrains.find(t => t.theme === theme && t.id !== 0)
@@ -389,8 +474,8 @@ async function duplicateMap() {
   if (!state.current) return;
   const v = await showModal('复制地图', [{ key:'name', label:'新名称', type:'text', value: state.currentName + '2' }]);
   if (!v) return;
-  if (!/^[A-Za-z0-9_\-]+$/.test(v.name)) return alert('名称非法');
-  if (mapNameExists(v.name)) return alert('已存在同名地图');
+  if (!/^[A-Za-z0-9_\-]+$/.test(v.name)) return showAlert('名称非法');
+  if (mapNameExists(v.name)) return showAlert('已存在同名地图');
   const copy = JSON.parse(JSON.stringify(state.current));
   copy.mapName = v.name;
   await API.saveMap(v.name, copy);
@@ -404,8 +489,8 @@ async function renameMap() {
   const old = state.currentName;
   const v = await showModal('改名', [{ key:'name', label:'新名称', type:'text', value: old }]);
   if (!v || v.name === old) return;
-  if (!/^[A-Za-z0-9_\-]+$/.test(v.name)) return alert('名称非法');
-  if (mapNameExists(v.name)) return alert('已存在同名地图');
+  if (!/^[A-Za-z0-9_\-]+$/.test(v.name)) return showAlert('名称非法');
+  if (mapNameExists(v.name)) return showAlert('已存在同名地图');
   state.current.mapName = v.name;
   await API.saveMap(v.name, state.current);
   await API.delMap(old);
@@ -418,7 +503,7 @@ async function renameMap() {
 
 async function deleteMap() {
   if (!state.current) return;
-  if (!confirm(`确定删除地图「${state.currentName}」？此操作不可撤销。`)) return;
+  if (!await showConfirm(`确定删除地图「${state.currentName}」？此操作不可撤销。`, { danger: true })) return;
   const gone = state.currentName;
   await API.delMap(gone);
   state.maps = state.maps.filter(m => m.name !== gone);
@@ -544,13 +629,15 @@ function manageThemes() {
     API.saveTerrains({ themes: state.themes, terrains: state.terrains });
     indexTerrains(); repaintAll();
   }
-  function delTheme(th) {
+  async function delTheme(th) {
     const maps = state.maps.filter(m => m.theme === th).map(m => m.name);
     const tiles = state.terrains.filter(t => t.theme === th).length;
+    const flowThemes = state.flowConfig.mapThemes.filter(theme => theme.name === th).length;
     let msg = `删除主题「${th}」？`;
     if (maps.length) msg += `\n${maps.length} 张地图用到它，将变为「未分类」（数据不变）。`;
     if (tiles) msg += `\n${tiles} 个地块的主题会被清空（变为通用）。`;
-    if (!confirm(msg)) return;
+    if (flowThemes) msg += `\n流程中有 ${flowThemes} 个同名主题，将保留并标记为缺失，便于手动处理。`;
+    if (!await showConfirm(msg, { danger: true })) return;
     state.themes = state.themes.filter(x => x !== th);
     for (const t of state.terrains) if (t.theme === th) t.theme = '';
     persist(); render();
@@ -558,9 +645,14 @@ function manageThemes() {
   async function doRename(oldName, nn) {
     const affectsCurrent = state.current && state.current.theme === oldName;
     if (affectsCurrent && state.dirty &&
-        !confirm('当前地图有未保存修改，重命名主题会一并保存当前地图，继续？')) { render(); return; }
+        !await showConfirm('当前地图有未保存修改，重命名主题会一并保存当前地图，继续？')) { render(); return; }
     state.themes = state.themes.map(t => t === oldName ? nn : t);
     for (const t of state.terrains) if (t.theme === oldName) t.theme = nn;
+    let flowRenamed = false;
+    for (const flowTheme of state.flowConfig.mapThemes) {
+      if (flowTheme.name === oldName) { flowTheme.name = nn; flowRenamed = true; }
+    }
+    if (flowRenamed) markFlowDirty();
     for (const entry of state.maps) {
       if (entry.theme !== oldName) continue;
       if (entry.name === state.currentName && state.current) {
@@ -574,11 +666,12 @@ function manageThemes() {
     }
     persist(); render();
     populateMapThemeSelect(); renderMapList(); renderRight(); updateTitle();
+    if (state.mode === 'flow') renderFlowEditor();
     toast(`已重命名为「${nn}」`);
   }
   async function inferAll() {
     if (state.dirty) {
-      if (!confirm('批量推断会读写磁盘上的地图。当前地图有未保存修改，先保存？')) return;
+      if (!await showConfirm('批量推断会读写磁盘上的地图。当前地图有未保存修改，先保存？')) return;
       await saveMap();
     }
     let changed = 0, already = 0, skipped = 0;
@@ -593,10 +686,10 @@ function manageThemes() {
     }
     if (state.currentName) await loadMap(state.currentName);
     render(); populateMapThemeSelect(); renderMapList();
-    alert(`批量推断完成：\n归类 ${changed} 张，已有主题跳过 ${already} 张，无法推断 ${skipped} 张。`);
+    showAlert(`批量推断完成：\n归类 ${changed} 张，已有主题跳过 ${already} 张，无法推断 ${skipped} 张。`);
   }
   function render() {
-    box.innerHTML = '<h2>🏷 管理主题</h2>';
+    box.innerHTML = `<h2>${icon('tag')}<span>管理主题</span></h2>`;
     box.appendChild(hint('每个主题是一组地块。地图选定主题后，只能使用该主题的地块 +「通用」(无主题)地块。改名后回车即重命名（会同步更新用到它的地图与地块）。'));
     const list = document.createElement('div'); list.className = 'theme-list';
     if (!state.themes.length) list.appendChild(hint('（暂无主题，请在下方添加）'));
@@ -606,39 +699,40 @@ function manageThemes() {
       nm.onchange = () => {
         const nn = nm.value.trim();
         if (!nn || nn === th) { nm.value = th; return; }
-        if (state.themes.includes(nn)) { alert('已存在该主题'); nm.value = th; return; }
+        if (state.themes.includes(nn)) { showAlert('已存在该主题'); nm.value = th; return; }
         doRename(th, nn);
       };
       const cnt = document.createElement('span'); cnt.className = 'cnt';
       cnt.textContent = `${state.terrains.filter(t => t.theme === th).length} 地块 · ${state.maps.filter(m => m.theme === th).length} 图`;
-      const del = document.createElement('button'); del.className = 'del'; del.textContent = '✕';
+      const del = document.createElement('button'); del.className = 'del'; del.innerHTML = icon('x');
       del.title = '删除主题'; del.onclick = () => delTheme(th);
       row.append(nm, cnt, del); list.appendChild(row);
     }
     box.appendChild(list);
     const addRow = document.createElement('div'); addRow.className = 'mfield';
     const inp = inputEl('text', ''); inp.placeholder = '新主题名称';
-    const addBtn = mkBtn('＋ 添加', () => {
+    const addBtn = mkIconBtn('plus', '添加', () => {
       const val = inp.value.trim();
       if (!val) return;
-      if (state.themes.includes(val)) return alert('已存在该主题');
+      if (state.themes.includes(val)) { showAlert('已存在该主题'); return; }
       state.themes.push(val); persist(); render();
     });
     addRow.append(inp, addBtn); box.appendChild(addRow);
     const ops = document.createElement('div'); ops.className = 'toolrow'; ops.style.marginTop = '4px';
-    ops.appendChild(mkBtn('🔍 批量推断未分类地图', inferAll));
+    ops.appendChild(mkIconBtn('search', '批量推断未分类地图', inferAll));
     box.appendChild(ops);
     const actions = document.createElement('div'); actions.className = 'actions';
     const done = document.createElement('button'); done.className = 'primary'; done.textContent = '完成';
     done.onclick = () => {
       layer.classList.add('hidden'); layer.innerHTML = '';
       populateMapThemeSelect(); renderMapList(); renderRight();
+      if (state.mode === 'flow') renderFlowEditor();
     };
     actions.append(done); box.appendChild(actions);
   }
   render();
   layer.innerHTML = ''; layer.appendChild(box);
-  layer.onclick = e => { if (e.target === layer) { layer.classList.add('hidden'); layer.innerHTML = ''; populateMapThemeSelect(); renderMapList(); renderRight(); } };
+  layer.onclick = e => { if (e.target === layer) { layer.classList.add('hidden'); layer.innerHTML = ''; populateMapThemeSelect(); renderMapList(); renderRight(); if (state.mode === 'flow') renderFlowEditor(); } };
 }
 
 /* ------------------------------------------------------------------ *
@@ -811,8 +905,8 @@ function showReadout(x, y) {
   const en = enemyAt(x, y);
   let s = `(${x}, ${y})  地形: ${ter ? ter.name : '未知#' + tid}`;
   if (ter && ter.deployable === false) s += ' (不可部署)';
-  if (en) s += `   👾 ${en.name}`;
-  if (inDeploy(x, y)) s += '   🚩 部署区';
+  if (en) s += `   敌人: ${en.name}`;
+  if (inDeploy(x, y)) s += '   部署区';
   const issues = en ? enemyPositionIssues(x, y) : [];
   if (issues.length) s += `   ⚠ 敌人位于${issues.join('、')}`;
   $('#coordReadout').textContent = s;
@@ -937,6 +1031,7 @@ function removeDeploy(x, y) {
  * ------------------------------------------------------------------ */
 function renderRight() {
   const r = $('#right');
+  if (state.mode === 'flow') { r.innerHTML = ''; return; }
   if (!state.current) {
     r.innerHTML = '<p class="hint">新建或选择一张地图开始编辑。</p>';
     if (state.mode === 'enemy') renderEnemyUnitConfigEntry(r);
@@ -954,10 +1049,10 @@ function renderTerrainPanel(r) {
   const allowed = allowedTerrains();
   if (!allowed.some(t => t.id === state.activeTerrainId)) state.activeTerrainId = allowed.length ? allowed[0].id : 0;
 
-  const sec = section('🎨 地形画笔');
+  const sec = section('地形画笔', 'palette');
   const tools = document.createElement('div'); tools.className = 'toolrow';
-  for (const [k, lbl] of [['brush','🖌 画笔'],['rect','▭ 矩形'],['fill','🪣 填充']]) {
-    const b = document.createElement('button'); b.textContent = lbl;
+  for (const [k, ic, lbl] of [['brush','brush','画笔'],['rect','square','矩形'],['fill','bucket','填充']]) {
+    const b = document.createElement('button'); b.innerHTML = icon(ic) + `<span>${lbl}</span>`;
     b.className = state.tool === k ? 'active' : '';
     b.onclick = () => { state.tool = k; renderRight(); };
     tools.appendChild(b);
@@ -997,7 +1092,7 @@ function renderTerrainPanel(r) {
 }
 
 function renderTerrainConfigEntry(r) {
-  const sec = section('⚙ 地形配置');
+  const sec = section('地形配置', 'settings');
   sec.appendChild(hint('在独立的大窗口中增删改地形，不再占用右侧绘制面板。'));
   const open = mkBtn('打开地形配置窗口…', () => openConfigEditor('terrain'));
   open.className = 'config-entry-button'; sec.appendChild(open); r.appendChild(sec);
@@ -1014,7 +1109,7 @@ function openConfigEditor(kind) {
   const box = document.createElement('div'); box.className = 'modal config-modal';
   const head = document.createElement('div'); head.className = 'config-modal-head';
   const title = document.createElement('h2'); title.id = 'configEditorTitle';
-  const close = mkBtn('✕', closeConfigEditor); close.className = 'config-modal-close'; close.title = '关闭';
+  const close = mkIconBtn('x', '', closeConfigEditor); close.className = 'config-modal-close'; close.title = '关闭';
   head.append(title, close);
   const body = document.createElement('div'); body.className = 'config-modal-body'; body.id = 'configEditorBody';
   box.append(head, body); layer.appendChild(box);
@@ -1027,8 +1122,8 @@ function openConfigEditor(kind) {
 
 function configEditorTitle() {
   return activeConfigKind === 'terrain'
-    ? '⚙ 地形配置'
-    : `⚙ EnemyUnit 配置${state.unitsDirty ? ' ●' : ''}`;
+    ? `${icon('settings')}<span>地形配置</span>`
+    : `${icon('settings')}<span>EnemyUnit 配置${state.unitsDirty ? ' ●' : ''}</span>`;
 }
 
 function renderOpenConfigEditor() {
@@ -1037,7 +1132,7 @@ function renderOpenConfigEditor() {
   const scrollTop = body.scrollTop;
   body.innerHTML = '';
   body.classList.toggle('enemy-config-body', activeConfigKind === 'enemy');
-  $('#configEditorTitle').textContent = configEditorTitle();
+  $('#configEditorTitle').innerHTML = configEditorTitle();
   if (activeConfigKind === 'terrain') renderTerrainConfig(body);
   else renderEnemyUnitConfig(body);
   body.scrollTop = scrollTop;
@@ -1055,7 +1150,7 @@ function closeConfigEditor() {
 }
 
 function renderTerrainConfig(r) {
-  const sec = section('⚙ 地形配置');
+  const sec = section('地形配置', 'settings');
   sec.appendChild(hint('增删改地形（id / 名称 / 主题 / 颜色），改完点「保存配置」。不会改动 TileType.cs。'));
   const tbl = document.createElement('div'); tbl.className = 'tcfg';
   const head = document.createElement('div'); head.className = 'row head';
@@ -1075,9 +1170,9 @@ function renderTerrainConfig(r) {
     dep.checked = t.deployable !== false; dep.title = '可部署：不勾选则该地块不能放置敌人';
     dep.onchange = () => { t.deployable = dep.checked; repaintAll(); };
     const col = inputEl('color', t.color); col.oninput = () => { t.color = col.value; indexTerrains(); repaintAll(); };
-    const del = document.createElement('button'); del.className = 'del'; del.textContent = '✕';
-    del.title = '删除该地形'; del.onclick = () => {
-      if (confirm(`删除地形「${t.name}」(#${t.id})？使用它的地图格子会变为未知色。`)) {
+    const del = document.createElement('button'); del.className = 'del'; del.innerHTML = icon('x');
+    del.title = '删除该地形'; del.onclick = async () => {
+      if (await showConfirm(`删除地形「${t.name}」(#${t.id})？使用它的地图格子会变为未知色。`, { danger: true })) {
         state.terrains.splice(i, 1); indexTerrains(); renderRight(); repaintAll(); refreshOpenConfigEditor('terrain');
       }
     };
@@ -1087,13 +1182,13 @@ function renderTerrainConfig(r) {
 
   const bar = document.createElement('div'); bar.className = 'toolrow'; bar.style.marginTop = '10px';
   bar.append(
-    mkBtn('＋ 新增', () => {
+    mkIconBtn('plus', '新增', () => {
       const nextId = state.terrains.reduce((mx, t) => Math.max(mx, t.id), 0) + 1;
       state.terrains.push({ id: nextId, name: 'NewTile', color: '#cccccc', theme: effectiveTheme(), deployable: true });
       indexTerrains(); renderRight(); refreshOpenConfigEditor('terrain');
     }),
-    mkBtn('↻ 从TileType导入', importFromTileType),
-    (() => { const b = mkBtn('💾 保存配置', saveTerrainConfig); b.className = 'mini primary'; return b; })(),
+    mkIconBtn('download', '从TileType导入', importFromTileType),
+    (() => { const b = mkIconBtn('save', '保存配置', saveTerrainConfig); b.className = 'mini primary'; return b; })(),
   );
   sec.appendChild(bar);
   r.appendChild(sec);
@@ -1101,10 +1196,10 @@ function renderTerrainConfig(r) {
 
 async function saveTerrainConfig() {
   const ids = state.terrains.map(t => t.id);
-  if (new Set(ids).size !== ids.length) return alert('存在重复的地形 id，请修正后再保存');
+  if (new Set(ids).size !== ids.length) return showAlert('存在重复的地形 id，请修正后再保存');
   const r = await API.saveTerrains({ themes: state.themes, terrains: state.terrains });
   if (r.ok) { indexTerrains(); repaintAll(); toast('地形配置已保存'); }
-  else alert('保存失败');
+  else showAlert('保存失败');
 }
 
 async function importFromTileType() {
@@ -1119,7 +1214,7 @@ async function importFromTileType() {
     }
   }
   indexTerrains(); populateMapThemeSelect(); renderRight(); refreshOpenConfigEditor('terrain');
-  alert(added ? `导入了 ${added} 个新地形，请检查颜色后点「保存配置」` : '没有发现新的地形类型');
+  showAlert(added ? `导入了 ${added} 个新地形，请检查颜色后点「保存配置」` : '没有发现新的地形类型');
 }
 
 /* --- enemy panel --- */
@@ -1127,7 +1222,7 @@ function renderEnemyPanel(r) {
   r.innerHTML = '';
   const m = state.current;
 
-  const ps = section('👾 敌人预设');
+  const ps = section('敌人预设', 'skull');
   ps.appendChild(hint('一张地图可有多套预设，按权重随机抽取。点标签切换当前编辑的预设。'));
   const tabs = document.createElement('div'); tabs.className = 'presets';
   const totalW = m.enemyPresets.reduce((s, p) => s + (+p.weight || 0), 0) || 1;
@@ -1138,7 +1233,7 @@ function renderEnemyPanel(r) {
     b.onclick = () => { state.activePreset = i; state.selectedEnemy = null; renderRight(); repaintAll(); };
     tabs.appendChild(b);
   });
-  const addP = document.createElement('div'); addP.className = 'preset-tab'; addP.textContent = '＋';
+  const addP = document.createElement('div'); addP.className = 'preset-tab'; addP.innerHTML = icon('plus');
   addP.onclick = () => { edit(() => m.enemyPresets.push({ weight: 50, enemies: [] })); state.activePreset = m.enemyPresets.length - 1; renderRight(); repaintAll(); };
   tabs.appendChild(addP);
   ps.appendChild(tabs);
@@ -1148,9 +1243,9 @@ function renderEnemyPanel(r) {
   const wIn = inputEl('number', p.weight); wIn.min = 0;
   wIn.onchange = () => { edit(() => { p.weight = clamp(+wIn.value, 0, 100000); }); renderEnemyPanel(r); };
   wrow.append(labelEl('权重'), wIn);
-  const delP = mkBtn('删除本预设', () => {
-    if (m.enemyPresets.length <= 1) return alert('至少保留一套预设');
-    if (!confirm('删除当前预设？')) return;
+  const delP = mkIconBtn('trash', '删除本预设', async () => {
+    if (m.enemyPresets.length <= 1) { showAlert('至少保留一套预设'); return; }
+    if (!await showConfirm('删除当前预设？', { danger: true })) return;
     edit(() => m.enemyPresets.splice(state.activePreset, 1));
     state.activePreset = 0; state.selectedEnemy = null; renderRight(); repaintAll();
   });
@@ -1186,7 +1281,7 @@ function renderEnemyPanel(r) {
       nm.append(document.createElement('br'), warning);
     }
     nm.onclick = () => { state.selectedEnemy = { preset: state.activePreset, index: i }; repaintAll(); renderEnemyPanel(r); scrollToCell(en.x, en.y); };
-    const x = document.createElement('span'); x.className = 'x'; x.textContent = '✕';
+    const x = document.createElement('span'); x.className = 'x'; x.innerHTML = icon('x');
     x.title = '删除'; x.onclick = () => { edit(() => p.enemies.splice(i, 1)); state.selectedEnemy = null; repaintAll(); renderEnemyPanel(r); };
     row.append(nm, x); list.appendChild(row);
   });
@@ -1197,7 +1292,7 @@ function renderEnemyPanel(r) {
 }
 
 function renderEnemyUnitConfigEntry(r) {
-  const sec = section(`⚙ EnemyUnit 配置${state.unitsDirty ? ' ●' : ''}`);
+  const sec = section('EnemyUnit 配置' + (state.unitsDirty ? ' ●' : ''), 'settings');
   sec.appendChild(hint('在独立的大窗口中编辑单位、职业、技能和装备。'));
   const open = mkBtn('打开 EnemyUnit 配置窗口…', () => openConfigEditor('enemy'));
   open.className = 'config-entry-button'; sec.appendChild(open); r.appendChild(sec);
@@ -1242,19 +1337,19 @@ function renderEnemyUnitConfig(r) {
   const detail = document.createElement('div'); detail.className = 'enemy-config-detail';
   layout.append(nav, detail); r.appendChild(layout);
 
-  const sec = section(`⚙ EnemyUnit 配置${state.unitsDirty ? ' ●' : ''}`);
+  const sec = section('EnemyUnit 配置' + (state.unitsDirty ? ' ●' : ''), 'settings');
   const enums = state.enemyEnums;
   sec.appendChild(hint(`枚举候选：职业 ${enums.professions.length} · 技能 ${enums.skills.length} · 装备 ${enums.equipments.length}。输入可搜索，但保存值必须来自对应的 C# enum。`));
 
   const tools = document.createElement('div'); tools.className = 'toolrow unit-config-tools';
   tools.append(
-    mkBtn('＋ 新增', addEnemyUnit),
-    mkBtn('复制', () => duplicateEnemyUnit(selected)),
-    mkBtn('↑', () => moveEnemyUnit(selected, -1)),
-    mkBtn('↓', () => moveEnemyUnit(selected, 1)),
-    (() => { const b = mkBtn('删除', () => deleteEnemyUnit(selected)); b.className = 'mini danger'; return b; })(),
+    mkIconBtn('plus', '新增', addEnemyUnit),
+    mkIconBtn('copy', '复制', () => duplicateEnemyUnit(selected)),
+    (() => { const b = mkIconBtn('arrowUp', '', () => moveEnemyUnit(selected, -1)); b.title = '上移'; return b; })(),
+    (() => { const b = mkIconBtn('arrowDown', '', () => moveEnemyUnit(selected, 1)); b.title = '下移'; return b; })(),
+    (() => { const b = mkIconBtn('trash', '删除', () => deleteEnemyUnit(selected)); b.className = 'mini danger'; return b; })(),
   );
-  const save = mkBtn('💾 保存配置', saveEnemyUnits); save.className = 'mini primary unit-save';
+  const save = mkIconBtn('save', '保存配置', saveEnemyUnits); save.className = 'mini primary unit-save';
   tools.appendChild(save);
   sec.appendChild(tools);
 
@@ -1278,9 +1373,9 @@ function renderEnemyUnitConfig(r) {
 
   const skillTitle = document.createElement('div'); skillTitle.className = 'subhead';
   skillTitle.innerHTML = '<b>Skills</b><span class="grow"></span>';
-  const addSkill = mkBtn('＋ 技能', () => {
+  const addSkill = mkIconBtn('plus', '技能', () => {
     const value = firstEnumValue(enums.skills);
-    if (!value) return alert('Skill enum 没有可用成员，请检查路径设置');
+    if (!value) { showAlert('Skill enum 没有可用成员，请检查路径设置'); return; }
     (selected.skills ||= []).push({ skill: value, level: 1 });
     markUnitsDirty(); renderEnemyUnitConfigPanelOnly();
   });
@@ -1295,10 +1390,10 @@ function renderEnemyUnitConfig(r) {
     const level = inputEl('number', entry.level); level.title = '技能等级'; level.step = 1;
     level.onchange = () => {
       const value = Number(level.value);
-      if (!Number.isInteger(value)) { alert('技能等级必须是整数'); level.value = entry.level; return; }
+      if (!Number.isInteger(value)) { showAlert('技能等级必须是整数'); level.value = entry.level; return; }
       entry.level = value; markUnitsDirty(); renderEnemyUnitConfigPanelOnly();
     };
-    const del = mkBtn('✕', () => { selected.skills.splice(index, 1); markUnitsDirty(); renderEnemyUnitConfigPanelOnly(); });
+    const del = mkIconBtn('x', '', () => { selected.skills.splice(index, 1); markUnitsDirty(); renderEnemyUnitConfigPanelOnly(); });
     del.className = 'mini danger'; row.append(number, picker, level, del); skills.appendChild(row);
   });
   if (!selected.skills.length) skills.appendChild(hint('没有技能'));
@@ -1306,9 +1401,9 @@ function renderEnemyUnitConfig(r) {
 
   const equipmentTitle = document.createElement('div'); equipmentTitle.className = 'subhead';
   equipmentTitle.innerHTML = '<b>Equipments</b><span class="grow"></span>';
-  const addEquipment = mkBtn('＋ 装备', () => {
+  const addEquipment = mkIconBtn('plus', '装备', () => {
     const value = firstEnumValue(enums.equipments);
-    if (!value) return alert('Equipment enum 没有可用成员，请检查路径设置');
+    if (!value) { showAlert('Equipment enum 没有可用成员，请检查路径设置'); return; }
     (selected.equipments ||= []).push(value);
     markUnitsDirty(); renderEnemyUnitConfigPanelOnly();
   });
@@ -1320,7 +1415,7 @@ function renderEnemyUnitConfig(r) {
     const picker = enumPicker(enums.equipments, equipment, value => {
       selected.equipments[index] = value; markUnitsDirty(); renderEnemyUnitConfigPanelOnly();
     }, '搜索装备');
-    const del = mkBtn('✕', () => { selected.equipments.splice(index, 1); markUnitsDirty(); renderEnemyUnitConfigPanelOnly(); });
+    const del = mkIconBtn('x', '', () => { selected.equipments.splice(index, 1); markUnitsDirty(); renderEnemyUnitConfigPanelOnly(); });
     del.className = 'mini danger'; row.append(number, picker, del); equipments.appendChild(row);
   });
   if (!selected.equipments.length) equipments.appendChild(hint('没有装备'));
@@ -1432,14 +1527,14 @@ function nextUnitId(base) {
 
 function addEnemyUnit() {
   const profession = firstEnumValue(state.enemyEnums.professions);
-  if (!profession) return alert('Profession enum 没有可用成员，请检查路径设置');
+  if (!profession) { showAlert('Profession enum 没有可用成员，请检查路径设置'); return; }
   const unit = { id: nextUnitId('NewEnemy'), profession, skills: [], equipments: [] };
   state.units.push(unit); state.activeUnitId = unit.id;
   markUnitsDirty(); renderEnemyUnitConfigPanelOnly();
 }
 
 function duplicateEnemyUnit(unit) {
-  if (!unit) return alert('请先选择一个 EnemyUnit');
+  if (!unit) { showAlert('请先选择一个 EnemyUnit'); return; }
   const copy = JSON.parse(JSON.stringify(unit));
   copy.id = nextUnitId(unit.id + 'Copy');
   state.units.splice(state.units.indexOf(unit) + 1, 0, copy);
@@ -1448,23 +1543,23 @@ function duplicateEnemyUnit(unit) {
 }
 
 function moveEnemyUnit(unit, delta) {
-  if (!unit) return alert('请先选择一个 EnemyUnit');
+  if (!unit) { showAlert('请先选择一个 EnemyUnit'); return; }
   const from = state.units.indexOf(unit), to = clamp(from + delta, 0, state.units.length - 1);
   if (from === to) return;
   state.units.splice(to, 0, state.units.splice(from, 1)[0]);
   markUnitsDirty(); renderEnemyUnitConfigPanelOnly();
 }
 
-function renameEnemyUnit(unit, newId) {
+async function renameEnemyUnit(unit, newId) {
   const oldId = unit.id;
   if (newId === oldId) return;
-  if (!/^[A-Za-z_]\w*$/.test(newId)) { alert('ID 必须是合法标识符：以字母或下划线开头，只包含字母、数字、下划线'); renderEnemyUnitConfigPanelOnly(); return; }
-  if (state.units.some(other => other !== unit && other.id === newId)) { alert('已经存在同名 EnemyUnit'); renderEnemyUnitConfigPanelOnly(); return; }
+  if (!/^[A-Za-z_]\w*$/.test(newId)) { showAlert('ID 必须是合法标识符：以字母或下划线开头，只包含字母、数字、下划线'); renderEnemyUnitConfigPanelOnly(); return; }
+  if (state.units.some(other => other !== unit && other.id === newId)) { showAlert('已经存在同名 EnemyUnit'); renderEnemyUnitConfigPanelOnly(); return; }
   const refs = state.current ? state.current.enemyPresets.reduce((sum, preset) => sum + preset.enemies.filter(enemy => enemy.name === oldId).length, 0) : 0;
   const message = `确定把 EnemyUnit「${oldId}」改名为「${newId}」？\n` +
     (refs ? `当前地图中的 ${refs} 个引用会同步修改，并需要另行保存地图。\n` : '') +
     '其他地图文件中的引用不会自动修改。';
-  if (!confirm(message)) { renderEnemyUnitConfigPanelOnly(); return; }
+  if (!await showConfirm(message)) { renderEnemyUnitConfigPanelOnly(); return; }
   unit.id = newId; state.activeUnitId = newId;
   if (refs) edit(() => {
     for (const preset of state.current.enemyPresets)
@@ -1473,11 +1568,11 @@ function renameEnemyUnit(unit, newId) {
   markUnitsDirty(); renderEnemyUnitConfigPanelOnly();
 }
 
-function deleteEnemyUnit(unit) {
-  if (!unit) return alert('请先选择一个 EnemyUnit');
+async function deleteEnemyUnit(unit) {
+  if (!unit) { showAlert('请先选择一个 EnemyUnit'); return; }
   const refs = state.current ? state.current.enemyPresets.reduce((sum, preset) => sum + preset.enemies.filter(enemy => enemy.name === unit.id).length, 0) : 0;
   const warning = refs ? `\n当前地图中有 ${refs} 个引用，删除后会显示为未知单位。` : '';
-  if (!confirm(`确定删除 EnemyUnit「${unit.id}」？${warning}\n其他地图文件不会被修改。`)) return;
+  if (!await showConfirm(`确定删除 EnemyUnit「${unit.id}」？${warning}\n其他地图文件不会被修改。`, { danger: true })) return;
   state.units.splice(state.units.indexOf(unit), 1);
   state.activeUnitId = state.units[0] ? state.units[0].id : null;
   markUnitsDirty(); renderEnemyUnitConfigPanelOnly();
@@ -1512,10 +1607,10 @@ function validateEnemyUnits() {
 
 async function saveEnemyUnits() {
   const errors = validateEnemyUnits();
-  if (errors.length) return alert('EnemyUnits 校验失败：\n' + errors.slice(0, 12).join('\n') + (errors.length > 12 ? `\n……另有 ${errors.length - 12} 项` : ''));
+  if (errors.length) return showAlert('EnemyUnits 校验失败：\n' + errors.slice(0, 12).join('\n') + (errors.length > 12 ? `\n……另有 ${errors.length - 12} 项` : ''));
   const response = await API.saveEnemies(state.enemyConfig);
   const result = await response.json().catch(() => ({}));
-  if (!response.ok || !result.ok) return alert('EnemyUnits 保存失败：\n' + (result.errors || [result.error || '未知错误']).join('\n'));
+  if (!response.ok || !result.ok) return showAlert('EnemyUnits 保存失败：\n' + (result.errors || [result.error || '未知错误']).join('\n'));
   state.unitsSavedJson = JSON.stringify(state.enemyConfig); state.unitsDirty = false;
   renderEnemyUnitConfigPanelOnly(); toast('EnemyUnits 已保存');
 }
@@ -1534,7 +1629,7 @@ function unitsForPicker() {
 /* --- deploy panel (free-form cell list) --- */
 function renderDeployPanel(r) {
   r.innerHTML = '';
-  const sec = section('🚩 玩家可部署区域 (自由形状)');
+  const sec = section('玩家可部署区域 (自由形状)', 'flag');
   sec.appendChild(hint('左键涂格设为玩家可部署，右键擦除（都可拖动）；敌人不能进入该区域。保存为坐标列表 [{x,y}]。'));
   const info = document.createElement('div'); info.className = 'fieldrow';
   info.innerHTML = `<label>已选格子</label><b>${state.current.deployRegion.length}</b>`;
@@ -1545,6 +1640,431 @@ function renderDeployPanel(r) {
   });
   clr.className = 'mini danger'; sec.appendChild(clr);
   r.appendChild(sec);
+}
+
+/* ------------------------------------------------------------------ *
+ * Level flow editor (MapThemes.json)
+ * ------------------------------------------------------------------ */
+function setFlowConfig(data) {
+  const root = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+  if (!Array.isArray(root.mapThemes)) root.mapThemes = [];
+  root.mapThemes = root.mapThemes.map(raw => {
+    const theme = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    if (typeof theme.name !== 'string') theme.name = '';
+    if (!Number.isInteger(theme.stage)) theme.stage = 1;
+    if (typeof theme.weight !== 'number' || !Number.isFinite(theme.weight)) theme.weight = 100;
+    if (!Array.isArray(theme.turnSequence)) theme.turnSequence = [];
+    theme.turnSequence = theme.turnSequence.map(rawTurn => {
+      const turn = rawTurn && typeof rawTurn === 'object' && !Array.isArray(rawTurn) ? rawTurn : {};
+      if (!Array.isArray(turn.mapSet)) turn.mapSet = [];
+      turn.mapSet = turn.mapSet.map(normalizeMapEntry).filter(Boolean);
+      return turn;
+    });
+    return theme;
+  });
+  state.flowConfig = root;
+  state.flowSavedJson = flowSnapshot();
+  state.flowDirty = false;
+  state.flowExpanded = new WeakSet();
+}
+
+/* A mapSet entry is { mapName, weight }. Accept legacy bare-string names
+ * (migrated to weight 100) and drop anything without a usable name. */
+const DEFAULT_MAP_WEIGHT = 100;
+function normalizeMapEntry(raw) {
+  if (typeof raw === 'string') return raw ? { mapName: raw, weight: DEFAULT_MAP_WEIGHT } : null;
+  if (raw && typeof raw === 'object' && typeof raw.mapName === 'string' && raw.mapName) {
+    const weight = (typeof raw.weight === 'number' && Number.isFinite(raw.weight) && raw.weight >= 0)
+      ? raw.weight : DEFAULT_MAP_WEIGHT;
+    return { mapName: raw.mapName, weight };
+  }
+  return null;
+}
+
+function flowSnapshot() { return JSON.stringify(state.flowConfig); }
+
+function markFlowDirty() {
+  state.flowDirty = flowSnapshot() !== state.flowSavedJson;
+  updateTitle(); renderFlowStats();
+}
+
+function editFlow(fn, rerender = true) {
+  const before = flowSnapshot();
+  fn();
+  if (flowSnapshot() !== before) markFlowDirty();
+  if (rerender) renderFlowEditor();
+}
+
+function flowMapIssue(theme, mapName) {
+  const map = state.maps.find(m => m.name === mapName);
+  if (!map) return '地图不存在';
+  if (map.theme !== theme.name) return map.theme ? `属于主题 ${map.theme}` : '地图未分类';
+  return '';
+}
+
+function flowReferenceCount(mapName) {
+  return state.flowConfig.mapThemes.reduce((total, theme) => total +
+    theme.turnSequence.reduce((sum, turn) =>
+      sum + turn.mapSet.filter(entry => entry.mapName === mapName).length, 0), 0);
+}
+
+function flowTotals() {
+  const themes = state.flowConfig.mapThemes;
+  const turns = themes.reduce((n, theme) => n + theme.turnSequence.length, 0);
+  const refs = themes.reduce((n, theme) => n + theme.turnSequence.reduce((m, turn) => m + turn.mapSet.length, 0), 0);
+  const stages = new Set(themes.filter(theme => Number.isInteger(theme.stage)).map(theme => theme.stage)).size;
+  return { stages, themes: themes.length, turns, refs };
+}
+
+function renderFlowStats() {
+  const el = $('#flowStats'); if (!el) return;
+  const n = flowTotals();
+  el.textContent = `${n.stages} 阶段 · ${n.themes} 主题 · ${n.turns} 回合 · ${n.refs} 次地图引用`;
+}
+
+function orderedFlowThemeIndices() {
+  return state.flowConfig.mapThemes.map((_, index) => index).sort((a, b) => {
+    const sa = state.flowConfig.mapThemes[a].stage;
+    const sb = state.flowConfig.mapThemes[b].stage;
+    const va = Number.isInteger(sa) ? sa : Number.MAX_SAFE_INTEGER;
+    const vb = Number.isInteger(sb) ? sb : Number.MAX_SAFE_INTEGER;
+    return va - vb || a - b;
+  });
+}
+
+function renderFlowEditor() {
+  const list = $('#flowStageList'); if (!list) return;
+  renderFlowStats();
+  list.innerHTML = '';
+  const indices = orderedFlowThemeIndices();
+  if (!indices.length) {
+    const empty = document.createElement('div'); empty.className = 'flow-empty';
+    empty.innerHTML = '<b>还没有流程主题</b><span>点击右上角「添加主题」开始编排第一个阶段。</span>';
+    list.appendChild(empty);
+    return;
+  }
+
+  let stageSection = null, previousStage = Symbol('first');
+  for (const themeIndex of indices) {
+    const theme = state.flowConfig.mapThemes[themeIndex];
+    const stage = Number.isInteger(theme.stage) ? theme.stage : null;
+    if (stage !== previousStage) {
+      stageSection = document.createElement('section'); stageSection.className = 'flow-stage';
+      const head = document.createElement('div'); head.className = 'flow-stage-head';
+      const title = document.createElement('span'); title.className = 'flow-stage-title';
+      title.textContent = stage === null ? '未设置阶段' : `阶段 ${stage}`;
+      const count = indices.filter(i => state.flowConfig.mapThemes[i].stage === theme.stage).length;
+      const meta = document.createElement('span'); meta.textContent = `${count} 个主题`;
+      head.append(title, meta); stageSection.appendChild(head); list.appendChild(stageSection);
+      previousStage = stage;
+    }
+    stageSection.appendChild(renderFlowThemeCard(theme, themeIndex));
+  }
+}
+
+function renderFlowThemeCard(theme, themeIndex) {
+  const expanded = state.flowExpanded.has(theme);
+  const card = document.createElement('article'); card.className = 'flow-theme-card' + (expanded ? ' expanded' : '');
+  const header = document.createElement('div'); header.className = 'flow-theme-header';
+  const toggle = document.createElement('button'); toggle.className = 'flow-theme-toggle';
+  toggle.innerHTML = icon(expanded ? 'chevronDown' : 'chevronRight'); toggle.title = expanded ? '收起主题' : '展开主题';
+  const heading = document.createElement('div'); heading.className = 'flow-theme-heading';
+  const name = document.createElement('h2'); name.textContent = theme.name || '未命名主题';
+  const badges = document.createElement('div'); badges.className = 'flow-theme-badges';
+  badges.append(flowBadge(`阶段 ${theme.stage}`, 'stage'), flowBadge(`权重 ${theme.weight}`, 'weight'));
+  heading.append(name, badges);
+
+  const summary = document.createElement('div'); summary.className = 'flow-theme-summary';
+  const counts = theme.turnSequence.map(turn => turn.mapSet.length);
+  summary.textContent = counts.length
+    ? `${counts.length} 回合 · 每回合地图数 ${counts.join(' / ')}`
+    : '0 回合 · 尚未编排地图';
+  const issues = theme.turnSequence.reduce((n, turn) =>
+    n + turn.mapSet.filter(entry => flowMapIssue(theme, entry.mapName)).length, 0);
+  if (issues) summary.appendChild(flowBadge(`${issues} 个引用需检查`, 'warning'));
+
+  const del = document.createElement('button'); del.className = 'mini danger flow-theme-delete';
+  del.innerHTML = icon('trash') + '<span>删除</span>'; del.onclick = () => deleteFlowTheme(themeIndex);
+  const toggleExpanded = () => {
+    if (expanded) state.flowExpanded.delete(theme); else state.flowExpanded.add(theme);
+    renderFlowEditor();
+  };
+  toggle.onclick = toggleExpanded; heading.onclick = toggleExpanded; summary.onclick = toggleExpanded;
+  header.append(toggle, heading, summary, del); card.appendChild(header);
+  if (expanded) card.appendChild(renderFlowThemeBody(theme, themeIndex));
+  return card;
+}
+
+function flowBadge(text, kind) {
+  const badge = document.createElement('span'); badge.className = 'flow-badge ' + (kind || '');
+  badge.textContent = text; return badge;
+}
+
+function renderFlowThemeBody(theme, themeIndex) {
+  const body = document.createElement('div'); body.className = 'flow-theme-body';
+  const settings = document.createElement('div'); settings.className = 'flow-theme-settings';
+
+  const themeSelect = document.createElement('select');
+  const names = [...state.themes];
+  if (theme.name && !names.includes(theme.name)) names.push(theme.name);
+  for (const item of names) {
+    const option = document.createElement('option'); option.value = item;
+    option.textContent = item + (state.themes.includes(item) ? '' : '（主题配置中不存在）');
+    themeSelect.appendChild(option);
+  }
+  themeSelect.value = theme.name;
+  themeSelect.onchange = () => editFlow(() => { theme.name = themeSelect.value; });
+
+  const stageInput = inputEl('number', theme.stage); stageInput.min = '1'; stageInput.step = '1';
+  stageInput.onchange = () => editFlow(() => { theme.stage = Math.max(1, Math.round(+stageInput.value || 1)); });
+  const weightInput = inputEl('number', theme.weight); weightInput.min = '0'; weightInput.step = 'any';
+  weightInput.onchange = () => editFlow(() => { theme.weight = Math.max(0, +weightInput.value || 0); });
+  settings.append(flowSetting('主题', themeSelect), flowSetting('阶段', stageInput), flowSetting('权重', weightInput));
+  body.appendChild(settings);
+
+  const layout = document.createElement('div'); layout.className = 'flow-theme-layout';
+  layout.append(renderFlowMapPalette(theme, themeIndex), renderFlowTurns(theme, themeIndex));
+  body.appendChild(layout);
+  return body;
+}
+
+function flowSetting(label, control) {
+  const wrap = document.createElement('label'); wrap.className = 'flow-setting';
+  const text = document.createElement('span'); text.textContent = label;
+  wrap.append(text, control); return wrap;
+}
+
+function renderFlowMapPalette(theme, themeIndex) {
+  const palette = document.createElement('aside'); palette.className = 'flow-map-palette';
+  const head = document.createElement('div'); head.className = 'flow-subhead';
+  const title = document.createElement('b'); title.textContent = '可用地图';
+  const count = document.createElement('span');
+  const maps = state.maps.filter(map => map.theme === theme.name).sort((a, b) => a.name.localeCompare(b.name));
+  count.textContent = `${maps.length} 张`; head.append(title, count); palette.appendChild(head);
+  palette.appendChild(hint('拖入右侧任意回合；重复拖入即可多次引用。'));
+  const mapList = document.createElement('div'); mapList.className = 'flow-palette-list';
+  if (!maps.length) mapList.appendChild(hint(theme.name ? '该主题下没有地图。' : '请先选择主题。'));
+  for (const map of maps) {
+    const item = document.createElement('div'); item.className = 'flow-palette-map';
+    item.draggable = true; item.tabIndex = 0; item.title = '拖到回合中；双击快速加入最后一回合';
+    const mapName = document.createElement('span'); mapName.textContent = map.name;
+    const refs = document.createElement('span'); refs.className = 'flow-reference-count';
+    refs.textContent = String(flowReferenceCount(map.name)); refs.title = '整个流程中的引用次数';
+    item.append(mapName, refs);
+    item.ondragstart = event => beginFlowDrag(event, { kind:'palette', themeIndex, name:map.name });
+    item.ondragend = endFlowDrag;
+    item.ondblclick = () => addMapToLastTurn(theme, map.name);
+    item.onkeydown = event => { if (event.key === 'Enter') addMapToLastTurn(theme, map.name); };
+    mapList.appendChild(item);
+  }
+  palette.appendChild(mapList);
+
+  const invalid = [];
+  for (const turn of theme.turnSequence)
+    for (const entry of turn.mapSet) {
+      const issue = flowMapIssue(theme, entry.mapName);
+      if (issue && !invalid.some(x => x.name === entry.mapName && x.issue === issue)) invalid.push({ name:entry.mapName, issue });
+    }
+  if (invalid.length) {
+    const warnings = document.createElement('div'); warnings.className = 'flow-reference-warnings';
+    const warningTitle = document.createElement('b'); warningTitle.textContent = '引用检查'; warnings.appendChild(warningTitle);
+    for (const item of invalid) {
+      const line = document.createElement('span'); line.textContent = `${item.name}：${item.issue}`; warnings.appendChild(line);
+    }
+    palette.appendChild(warnings);
+  }
+  return palette;
+}
+
+function renderFlowTurns(theme, themeIndex) {
+  const panel = document.createElement('div'); panel.className = 'flow-turn-panel';
+  const toolbar = document.createElement('div'); toolbar.className = 'flow-turn-toolbar';
+  const title = document.createElement('div'); title.className = 'flow-subhead';
+  title.innerHTML = `<b>回合序列</b><span>${theme.turnSequence.length} 回合</span>`;
+  const add = mkIconBtn('plus', '添加回合', () => editFlow(() => theme.turnSequence.push({ mapSet: [] })));
+  toolbar.append(title, add); panel.appendChild(toolbar);
+  const board = document.createElement('div'); board.className = 'flow-turn-board';
+  if (!theme.turnSequence.length) {
+    const empty = document.createElement('button'); empty.className = 'flow-add-first-turn';
+    empty.innerHTML = icon('plus') + '<span>添加第 1 回合</span>'; empty.onclick = add.onclick; board.appendChild(empty);
+  }
+  theme.turnSequence.forEach((turn, turnIndex) =>
+    board.appendChild(renderFlowTurn(theme, themeIndex, turn, turnIndex)));
+  panel.appendChild(board); return panel;
+}
+
+function renderFlowTurn(theme, themeIndex, turn, turnIndex) {
+  const card = document.createElement('div'); card.className = 'flow-turn-card';
+  const head = document.createElement('div'); head.className = 'flow-turn-head';
+  const label = document.createElement('b'); label.textContent = `回合 ${turnIndex + 1}`;
+  const total = document.createElement('span'); total.textContent = `${turn.mapSet.length} 张地图`;
+  const actions = document.createElement('div'); actions.className = 'flow-turn-actions';
+  const left = mkIconBtn('arrowLeft', '', () => moveFlowTurn(theme, turnIndex, -1)); left.title = '前移回合'; left.disabled = turnIndex === 0;
+  const right = mkIconBtn('arrowRight', '', () => moveFlowTurn(theme, turnIndex, 1)); right.title = '后移回合'; right.disabled = turnIndex === theme.turnSequence.length - 1;
+  const del = mkIconBtn('x', '', () => deleteFlowTurn(theme, turnIndex)); del.classList.add('danger'); del.title = '删除回合';
+  actions.append(left, right, del); head.append(label, total, actions); card.appendChild(head);
+
+  const maps = document.createElement('div'); maps.className = 'flow-turn-maps';
+  turn.mapSet.forEach((entry, mapIndex) => {
+    const insert = document.createElement('div'); insert.className = 'flow-insert-zone';
+    bindFlowDrop(insert, themeIndex, turnIndex, mapIndex); maps.appendChild(insert);
+    const chip = document.createElement('div'); chip.className = 'flow-turn-map';
+    const issue = flowMapIssue(theme, entry.mapName);
+    if (issue) { chip.classList.add('invalid'); chip.title = issue; }
+    const grip = document.createElement('span'); grip.className = 'flow-map-grip'; grip.innerHTML = icon('grip');
+    grip.title = '拖动以调整顺序 / 移动到其它回合';
+    const name = document.createElement('span'); name.textContent = entry.mapName; name.title = entry.mapName;
+    const weight = inputEl('number', entry.weight); weight.className = 'flow-map-weight';
+    weight.min = '0'; weight.step = 'any'; weight.title = '该地图在本回合内被抽中的权重';
+    weight.onchange = () => editFlow(() => { entry.weight = Math.max(0, +weight.value || 0); });
+    const remove = document.createElement('button'); remove.innerHTML = icon('x'); remove.title = '移除这次引用';
+    remove.onclick = () => editFlow(() => turn.mapSet.splice(mapIndex, 1));
+    chip.append(grip, name, weight, remove);
+    // Only the grip starts a drag, so the weight field stays clickable/editable.
+    chip.draggable = false;
+    grip.addEventListener('mousedown', () => { chip.draggable = true; });
+    grip.addEventListener('mouseup', () => { chip.draggable = false; });
+    chip.ondragstart = event => beginFlowDrag(event, { kind:'turnMap', themeIndex, turnIndex, mapIndex });
+    chip.ondragend = event => { endFlowDrag(event); chip.draggable = false; };
+    maps.appendChild(chip);
+  });
+  const end = document.createElement('div');
+  end.className = 'flow-insert-zone end' + (turn.mapSet.length ? '' : ' empty');
+  end.textContent = turn.mapSet.length ? '拖到末尾' : '将地图拖到这里';
+  bindFlowDrop(end, themeIndex, turnIndex, turn.mapSet.length); maps.appendChild(end);
+  card.appendChild(maps); return card;
+}
+
+/* Custom drag MIME. NOT text/plain — some browsers' "super-drag" feature
+ * (松开鼠标以搜索文本) hijacks any dragged plain text and offers to search it. */
+const FLOW_DRAG_MIME = 'application/x-mapmaker-flow';
+
+function beginFlowDrag(event, payload) {
+  state.flowDrag = payload;
+  event.dataTransfer.effectAllowed = payload.kind === 'palette' ? 'copy' : 'move';
+  event.dataTransfer.setData(FLOW_DRAG_MIME, JSON.stringify(payload));
+  document.body.classList.add('flow-dragging');
+}
+
+function endFlowDrag() {
+  state.flowDrag = null; document.body.classList.remove('flow-dragging');
+  document.querySelectorAll('.flow-drop-active').forEach(el => el.classList.remove('flow-drop-active'));
+}
+
+function bindFlowDrop(element, themeIndex, turnIndex, insertIndex) {
+  element.ondragover = event => {
+    const drag = state.flowDrag;
+    if (!drag || drag.themeIndex !== themeIndex) return;
+    event.preventDefault(); event.dataTransfer.dropEffect = drag.kind === 'palette' ? 'copy' : 'move';
+    element.classList.add('flow-drop-active');
+  };
+  element.ondragleave = () => element.classList.remove('flow-drop-active');
+  element.ondrop = event => {
+    event.preventDefault(); event.stopPropagation(); element.classList.remove('flow-drop-active');
+    let drag = state.flowDrag;
+    try { drag = JSON.parse(event.dataTransfer.getData(FLOW_DRAG_MIME)) || drag; } catch (_) { /* use live drag */ }
+    if (!drag || drag.themeIndex !== themeIndex) return;
+    editFlow(() => {
+      const themes = state.flowConfig.mapThemes;
+      const target = themes[themeIndex].turnSequence[turnIndex].mapSet;
+      let at = insertIndex, entry;
+      if (drag.kind === 'turnMap') {
+        const source = themes[drag.themeIndex].turnSequence[drag.turnIndex].mapSet;
+        entry = source[drag.mapIndex];                 // move the existing entry, keeping its weight
+        source.splice(drag.mapIndex, 1);
+        if (source === target && drag.mapIndex < at) at--;
+      } else {
+        entry = { mapName: drag.name, weight: DEFAULT_MAP_WEIGHT };   // palette -> new reference
+      }
+      target.splice(clamp(at, 0, target.length), 0, entry);
+    });
+    endFlowDrag();
+  };
+}
+
+function addMapToLastTurn(theme, mapName) {
+  editFlow(() => {
+    if (!theme.turnSequence.length) theme.turnSequence.push({ mapSet: [] });
+    theme.turnSequence[theme.turnSequence.length - 1].mapSet.push({ mapName, weight: DEFAULT_MAP_WEIGHT });
+  });
+}
+
+function moveFlowTurn(theme, turnIndex, delta) {
+  const next = turnIndex + delta;
+  if (next < 0 || next >= theme.turnSequence.length) return;
+  editFlow(() => {
+    const [turn] = theme.turnSequence.splice(turnIndex, 1);
+    theme.turnSequence.splice(next, 0, turn);
+  });
+}
+
+async function deleteFlowTurn(theme, turnIndex) {
+  const turn = theme.turnSequence[turnIndex];
+  if (turn.mapSet.length && !await showConfirm(`回合 ${turnIndex + 1} 中有 ${turn.mapSet.length} 次地图引用，仍要删除？`, { danger: true })) return;
+  editFlow(() => theme.turnSequence.splice(turnIndex, 1));
+}
+
+async function deleteFlowTheme(themeIndex) {
+  const theme = state.flowConfig.mapThemes[themeIndex];
+  const refs = theme.turnSequence.reduce((n, turn) => n + turn.mapSet.length, 0);
+  const suffix = refs ? `\n其中的 ${refs} 次地图引用也会一并移除。` : '';
+  if (!await showConfirm(`从流程中删除主题「${theme.name}」？${suffix}`, { danger: true })) return;
+  editFlow(() => state.flowConfig.mapThemes.splice(themeIndex, 1));
+}
+
+async function addFlowTheme() {
+  if (!state.themes.length) return showAlert('请先在左侧「主题」中创建至少一个地图主题。');
+  const maxStage = Math.max(1, ...state.flowConfig.mapThemes.map(theme => Number.isInteger(theme.stage) ? theme.stage : 1));
+  const values = await showModal('添加流程主题', [
+    { key:'name', label:'地图主题', type:'select', value:state.themes[0],
+      options:state.themes.map(name => ({ value:name, label:name })) },
+    { key:'stage', label:'游戏阶段', type:'number', value:maxStage },
+    { key:'weight', label:'出现权重', type:'number', value:100 },
+  ]);
+  if (!values) return;
+  const theme = {
+    name: values.name,
+    stage: Math.max(1, Math.round(+values.stage || 1)),
+    weight: Math.max(0, +values.weight || 0),
+    turnSequence: [],
+  };
+  state.flowExpanded.add(theme);
+  editFlow(() => state.flowConfig.mapThemes.push(theme));
+}
+
+function validateFlowForSave() {
+  const errors = [], warnings = [];
+  state.flowConfig.mapThemes.forEach((theme, themeIndex) => {
+    const base = `第 ${themeIndex + 1} 个主题`;
+    if (!theme.name) errors.push(`${base}缺少主题名`);
+    if (!Number.isInteger(theme.stage) || theme.stage < 1) errors.push(`${base}的阶段必须是大于等于 1 的整数`);
+    if (!Number.isFinite(theme.weight) || theme.weight < 0) errors.push(`${base}的权重必须大于等于 0`);
+    theme.turnSequence.forEach((turn, turnIndex) => {
+      if (!turn.mapSet.length) warnings.push(`${theme.name} / 回合 ${turnIndex + 1} 没有地图`);
+      for (const entry of turn.mapSet) {
+        const issue = flowMapIssue(theme, entry.mapName);
+        if (issue) warnings.push(`${theme.name} / 回合 ${turnIndex + 1} / ${entry.mapName}：${issue}`);
+      }
+    });
+  });
+  return { errors, warnings };
+}
+
+async function saveFlowConfig() {
+  const result = validateFlowForSave();
+  if (result.errors.length) return showAlert('无法保存：\n' + result.errors.join('\n'));
+  if (result.warnings.length &&
+      !await showConfirm(`发现 ${result.warnings.length} 个编排提示：\n\n${result.warnings.slice(0, 8).join('\n')}${result.warnings.length > 8 ? '\n…' : ''}\n\n仍要保存吗？`)) return;
+  let response;
+  try { response = await API.saveMapThemes(state.flowConfig); }
+  catch (err) { return showAlert('保存失败：' + err); }
+  if (!response.ok) {
+    let data = {};
+    try { data = await response.json(); } catch (_) { /* use fallback */ }
+    return showAlert('保存失败：\n' + ((data.errors || [data.error || response.statusText]).join('\n')));
+  }
+  state.flowSavedJson = flowSnapshot(); state.flowDirty = false;
+  updateTitle(); renderFlowStats(); toast('关卡流程已保存');
 }
 
 /* ------------------------------------------------------------------ *
@@ -1585,9 +2105,12 @@ function renderMapList() {
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
-function section(title) {
+function section(title, iconName) {
   const s = document.createElement('div'); s.className = 'section';
-  const h = document.createElement('h3'); h.textContent = title; s.appendChild(h);
+  const h = document.createElement('h3');
+  if (iconName) h.innerHTML = icon(iconName) + `<span>${escapeHtml(title)}</span>`;
+  else h.textContent = title;
+  s.appendChild(h);
   return s;
 }
 function hint(t) { const p = document.createElement('div'); p.className = 'hint'; p.textContent = t; return p; }
@@ -1664,6 +2187,44 @@ let toastTimer;
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), 1800);
+}
+
+/* ------------------------------------------------------------------ *
+ * Custom alert / confirm (replace the browser's native dialogs).
+ * Rendered in #dialogLayer, which stacks ABOVE #modalLayer so a confirm
+ * can pop over an open config window without destroying it.
+ * ------------------------------------------------------------------ */
+function showMessage({ title = '提示', message = '', confirmText = '确定', cancelText = null, danger = false }) {
+  return new Promise(resolve => {
+    const layer = $('#dialogLayer'); layer.classList.remove('hidden');
+    const box = document.createElement('div'); box.className = 'modal dialog-modal';
+    const h = document.createElement('h2'); h.textContent = title; box.appendChild(h);
+    const body = document.createElement('div'); body.className = 'dialog-message'; body.textContent = message; box.appendChild(body);
+    const actions = document.createElement('div'); actions.className = 'actions';
+    if (cancelText != null) { const c = mkBtn(cancelText, () => close(false)); c.className = ''; actions.appendChild(c); }
+    const ok = document.createElement('button');
+    ok.className = 'primary' + (danger ? ' danger-confirm' : ''); ok.textContent = confirmText;
+    ok.onclick = () => close(true);
+    actions.appendChild(ok); box.appendChild(actions);
+    layer.innerHTML = ''; layer.appendChild(box); ok.focus();
+    layer.onclick = e => { if (e.target === layer) close(cancelText != null ? false : true); };
+    function onKey(e) {
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); close(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(cancelText != null ? false : true); }
+    }
+    function close(val) {
+      layer.classList.add('hidden'); layer.innerHTML = ''; layer.onclick = null;
+      document.removeEventListener('keydown', onKey, true); resolve(val);
+    }
+    document.addEventListener('keydown', onKey, true);   // capture: don't leak Esc/Enter to underlying handlers
+  });
+}
+function showAlert(message, title) { return showMessage({ title: title || '提示', message, confirmText: '确定' }); }
+function showConfirm(message, opts = {}) {
+  return showMessage({
+    title: opts.title || '确认', message,
+    confirmText: opts.confirmText || '确定', cancelText: opts.cancelText || '取消', danger: !!opts.danger,
+  });
 }
 
 /* modal: fields -> Promise<values|null> */

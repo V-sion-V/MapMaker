@@ -1,0 +1,74 @@
+{
+  "mapThemes": [
+    {
+      "name": "Grassland",
+      "stage": 1,
+      "weight": 100,
+      "turnSequence": [
+        {
+          "mapSet": [
+            {
+              "mapName": "Campidoglio",
+              "weight": 80
+            }
+          ]
+        },
+        {
+          "mapSet": [
+            {
+              "mapName": "Campidoglio2",
+              "weight": 100
+            }
+          ]
+        },
+        {
+          "mapSet": [
+            {
+              "mapName": "Dessau",
+              "weight": 100
+            }
+          ]
+        },
+        {
+          "mapSet": [
+            {
+              "mapName": "Dessau2",
+              "weight": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Desert",
+      "stage": 2,
+      "weight": 100,
+      "turnSequence": [
+        {
+          "mapSet": [
+            {
+              "mapName": "Zama",
+              "weight": 100
+            }
+          ]
+        },
+        {
+          "mapSet": [
+            {
+              "mapName": "Zama2",
+              "weight": 100
+            }
+          ]
+        },
+        {
+          "mapSet": [
+            {
+              "mapName": "Throne",
+              "weight": 100
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

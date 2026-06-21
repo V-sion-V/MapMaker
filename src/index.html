@@ -9,19 +9,19 @@
 <body>
   <div id="app">
     <header id="topbar">
-      <div class="brand">🗺️ MapMaker</div>
+      <div class="brand"><span data-ico="map"></span> MapMaker <span class="ver">v1.3</span></div>
       <div id="mapTitle">未打开地图</div>
-      <label class="ctl">主题 <select id="mapTheme" disabled></select></label>
-      <button id="inferBtn" class="mini" title="按地块推断当前地图主题" disabled>🔍 推断</button>
+      <label class="ctl map-toolbar-control">主题 <select id="mapTheme" disabled></select></label>
+      <button id="inferBtn" class="mini map-toolbar-control" title="按地块推断当前地图主题" disabled><span data-ico="search"></span> 推断</button>
       <div class="grow"></div>
-      <button id="refreshBtn" class="mini" title="从磁盘重新读取地图与配置">🔄 刷新</button>
-      <button id="settingsBtn" class="mini" title="设置 Maps/配置文件路径">⚙ 路径</button>
-      <button id="undoBtn" class="mini" title="撤销 (Ctrl+Z)" disabled>↶ 撤销</button>
-      <button id="redoBtn" class="mini" title="重做 (Ctrl+Y)" disabled>↷ 重做</button>
-      <label class="ctl">缩放
+      <button id="refreshBtn" class="mini" title="从磁盘重新读取地图与配置"><span data-ico="refresh"></span> 刷新</button>
+      <button id="settingsBtn" class="mini" title="设置 Maps/配置文件路径"><span data-ico="settings"></span> 路径</button>
+      <button id="undoBtn" class="mini" title="撤销 (Ctrl+Z)" disabled><span data-ico="undo"></span> 撤销</button>
+      <button id="redoBtn" class="mini" title="重做 (Ctrl+Y)" disabled><span data-ico="redo"></span> 重做</button>
+      <label class="ctl map-toolbar-control">缩放
         <input id="zoom" type="range" min="6" max="120" value="32">
       </label>
-      <button id="saveBtn" class="primary">保存 (Ctrl+S)</button>
+      <button id="saveBtn" class="primary"><span data-ico="save"></span> 保存 (Ctrl+S)</button>
     </header>
 
     <main>
@@ -30,8 +30,8 @@
         <div class="panel-head">
           <span>地图</span>
           <span class="head-btns">
-            <button id="themesBtn" class="mini" title="新建/删除主题">🏷 主题</button>
-            <button id="newMapBtn" class="mini">＋ 新建</button>
+            <button id="themesBtn" class="mini" title="新建/删除主题"><span data-ico="tag"></span> 主题</button>
+            <button id="newMapBtn" class="mini"><span data-ico="plus"></span> 新建</button>
           </span>
         </div>
         <ul id="mapList"></ul>
@@ -46,9 +46,10 @@
       <!-- CENTER: grid canvas -->
       <section id="center">
         <div id="modeTabs">
-          <button data-mode="terrain" class="active">🎨 地形</button>
-          <button data-mode="enemy">👾 敌人</button>
-          <button data-mode="deploy">🚩 部署区</button>
+          <button data-mode="terrain" class="active"><span data-ico="palette"></span> 地形</button>
+          <button data-mode="enemy"><span data-ico="skull"></span> 敌人</button>
+          <button data-mode="deploy"><span data-ico="flag"></span> 部署区</button>
+          <button data-mode="flow"><span data-ico="route"></span> 流程</button>
         </div>
         <div id="gridWrap">
           <div id="gridScroll">
@@ -56,9 +57,21 @@
             <div id="rowRuler" class="ruler"></div>
             <div id="grid"></div>
           </div>
-          <div id="emptyHint" class="hidden">还没有地图，点击左上角「＋ 新建」开始。</div>
+          <div id="emptyHint" class="hidden">还没有地图，点击左上角「新建」开始。</div>
         </div>
         <div id="coordReadout">移动到格子上查看坐标</div>
+        <div id="flowWorkspace" class="hidden">
+          <div class="flow-toolbar">
+            <div>
+              <h1>关卡流程</h1>
+              <p>按阶段编排主题与回合；从地图栏拖入可重复引用同一张地图。</p>
+            </div>
+            <div class="grow"></div>
+            <div id="flowStats"></div>
+            <button id="addFlowThemeBtn" class="primary"><span data-ico="plus"></span> 添加主题</button>
+          </div>
+          <div id="flowStageList"></div>
+        </div>
       </section>
 
       <!-- RIGHT: contextual panel -->
@@ -67,6 +80,7 @@
   </div>
 
   <div id="modalLayer" class="hidden"></div>
+  <div id="dialogLayer" class="hidden"></div>
   <div id="toast" class="hidden"></div>
 
   <script src="app.js"></script>
