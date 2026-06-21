@@ -934,8 +934,8 @@ function renderRight() {
   const r = $('#right');
   if (!state.current) {
     r.innerHTML = '<p class="hint">新建或选择一张地图开始编辑。</p>';
-    if (state.mode === 'enemy') renderEnemyUnitConfig(r);
-    else renderTerrainConfig(r);
+    if (state.mode === 'enemy') renderEnemyUnitConfigEntry(r);
+    else if (state.mode === 'terrain') renderTerrainConfigEntry(r);
     return;
   }
   if (state.mode === 'terrain') renderTerrainPanel(r);
@@ -988,7 +988,65 @@ function renderTerrainPanel(r) {
   }
   sec.appendChild(wrap);
   r.appendChild(sec);
-  renderTerrainConfig(r);
+  renderTerrainConfigEntry(r);
+}
+
+function renderTerrainConfigEntry(r) {
+  const sec = section('⚙ 地形配置');
+  sec.appendChild(hint('在独立的大窗口中增删改地形，不再占用右侧绘制面板。'));
+  const open = mkBtn('打开地形配置窗口…', () => openConfigEditor('terrain'));
+  open.className = 'config-entry-button'; sec.appendChild(open); r.appendChild(sec);
+}
+
+let activeConfigKind = null;
+let configEditorKeydown = null;
+
+function openConfigEditor(kind) {
+  if (kind === 'enemy' && !state.units.some(unit => unit.id === state.activeUnitId) && state.units[0]) {
+    state.activeUnitId = state.units[0].id;
+  }
+  const layer = $('#modalLayer'); layer.classList.remove('hidden'); layer.innerHTML = '';
+  const box = document.createElement('div'); box.className = 'modal config-modal';
+  const head = document.createElement('div'); head.className = 'config-modal-head';
+  const title = document.createElement('h2'); title.id = 'configEditorTitle';
+  const close = mkBtn('✕', closeConfigEditor); close.className = 'config-modal-close'; close.title = '关闭';
+  head.append(title, close);
+  const body = document.createElement('div'); body.className = 'config-modal-body'; body.id = 'configEditorBody';
+  box.append(head, body); layer.appendChild(box);
+  activeConfigKind = kind;
+  renderOpenConfigEditor();
+  layer.onclick = event => { if (event.target === layer) closeConfigEditor(); };
+  configEditorKeydown = event => { if (event.key === 'Escape') closeConfigEditor(); };
+  document.addEventListener('keydown', configEditorKeydown);
+}
+
+function configEditorTitle() {
+  return activeConfigKind === 'terrain'
+    ? '⚙ 地形配置'
+    : `⚙ EnemyUnit 配置${state.unitsDirty ? ' ●' : ''}`;
+}
+
+function renderOpenConfigEditor() {
+  const body = $('#configEditorBody');
+  if (!body || !activeConfigKind) return;
+  const scrollTop = body.scrollTop;
+  body.innerHTML = '';
+  body.classList.toggle('enemy-config-body', activeConfigKind === 'enemy');
+  $('#configEditorTitle').textContent = configEditorTitle();
+  if (activeConfigKind === 'terrain') renderTerrainConfig(body);
+  else renderEnemyUnitConfig(body);
+  body.scrollTop = scrollTop;
+}
+
+function refreshOpenConfigEditor(kind) {
+  if (activeConfigKind === kind) renderOpenConfigEditor();
+}
+
+function closeConfigEditor() {
+  const layer = $('#modalLayer');
+  layer.classList.add('hidden'); layer.innerHTML = ''; layer.onclick = null;
+  if (configEditorKeydown) document.removeEventListener('keydown', configEditorKeydown);
+  configEditorKeydown = null; activeConfigKind = null;
 }
 
 function renderTerrainConfig(r) {
@@ -1015,7 +1073,7 @@ function renderTerrainConfig(r) {
     const del = document.createElement('button'); del.className = 'del'; del.textContent = '✕';
     del.title = '删除该地形'; del.onclick = () => {
       if (confirm(`删除地形「${t.name}」(#${t.id})？使用它的地图格子会变为未知色。`)) {
-        state.terrains.splice(i, 1); indexTerrains(); renderRight(); repaintAll();
+        state.terrains.splice(i, 1); indexTerrains(); renderRight(); repaintAll(); refreshOpenConfigEditor('terrain');
       }
     };
     row.append(id, nm, th, dep, col, del); tbl.appendChild(row);
@@ -1027,7 +1085,7 @@ function renderTerrainConfig(r) {
     mkBtn('＋ 新增', () => {
       const nextId = state.terrains.reduce((mx, t) => Math.max(mx, t.id), 0) + 1;
       state.terrains.push({ id: nextId, name: 'NewTile', color: '#cccccc', theme: effectiveTheme(), deployable: true });
-      indexTerrains(); renderRight();
+      indexTerrains(); renderRight(); refreshOpenConfigEditor('terrain');
     }),
     mkBtn('↻ 从TileType导入', importFromTileType),
     (() => { const b = mkBtn('💾 保存配置', saveTerrainConfig); b.className = 'mini primary'; return b; })(),
@@ -1055,7 +1113,7 @@ async function importFromTileType() {
       added++;
     }
   }
-  indexTerrains(); populateMapThemeSelect(); renderRight();
+  indexTerrains(); populateMapThemeSelect(); renderRight(); refreshOpenConfigEditor('terrain');
   alert(added ? `导入了 ${added} 个新地形，请检查颜色后点「保存配置」` : '没有发现新的地形类型');
 }
 
@@ -1123,7 +1181,14 @@ function renderEnemyPanel(r) {
   es.appendChild(list);
   r.appendChild(es);
 
-  renderEnemyUnitConfig(r);
+  renderEnemyUnitConfigEntry(r);
+}
+
+function renderEnemyUnitConfigEntry(r) {
+  const sec = section(`⚙ EnemyUnit 配置${state.unitsDirty ? ' ●' : ''}`);
+  sec.appendChild(hint('在独立的大窗口中编辑单位、职业、技能和装备。'));
+  const open = mkBtn('打开 EnemyUnit 配置窗口…', () => openConfigEditor('enemy'));
+  open.className = 'config-entry-button'; sec.appendChild(open); r.appendChild(sec);
 }
 
 function setEnemyConfig(data) {
@@ -1150,6 +1215,21 @@ function markUnitsDirty() {
 
 function renderEnemyUnitConfig(r) {
   const selected = state.units.find(u => u.id === state.activeUnitId);
+  const layout = document.createElement('div'); layout.className = 'enemy-config-layout';
+  const nav = document.createElement('div'); nav.className = 'enemy-config-nav';
+  const navTitle = document.createElement('h3'); navTitle.textContent = `EnemyUnits (${state.units.length})`; nav.appendChild(navTitle);
+  const navList = document.createElement('div'); navList.className = 'enemy-config-nav-list';
+  for (const unit of state.units) {
+    const item = document.createElement('button');
+    item.className = 'enemy-config-unit' + (unit === selected ? ' active' : '');
+    item.innerHTML = `<span>${escapeHtml(unit.id)}</span><small>${escapeHtml(unit.profession || '')}</small>`;
+    item.onclick = () => { state.activeUnitId = unit.id; refreshOpenConfigEditor('enemy'); };
+    navList.appendChild(item);
+  }
+  nav.appendChild(navList);
+  const detail = document.createElement('div'); detail.className = 'enemy-config-detail';
+  layout.append(nav, detail); r.appendChild(layout);
+
   const sec = section(`⚙ EnemyUnit 配置${state.unitsDirty ? ' ●' : ''}`);
   const enums = state.enemyEnums;
   sec.appendChild(hint(`枚举候选：职业 ${enums.professions.length} · 技能 ${enums.skills.length} · 装备 ${enums.equipments.length}。输入可搜索，但保存值必须来自对应的 C# enum。`));
@@ -1167,8 +1247,8 @@ function renderEnemyUnitConfig(r) {
   sec.appendChild(tools);
 
   if (!selected) {
-    sec.appendChild(hint(state.units.length ? '请在上方单位列表中选择一个 EnemyUnit 进行编辑。' : '当前没有 EnemyUnit，请点击“新增”。'));
-    r.appendChild(sec);
+    sec.appendChild(hint(state.units.length ? '请在左侧单位列表中选择一个 EnemyUnit 进行编辑。' : '当前没有 EnemyUnit，请点击“新增”。'));
+    detail.appendChild(sec);
     return;
   }
 
@@ -1232,30 +1312,89 @@ function renderEnemyUnitConfig(r) {
   if (!selected.equipments.length) equipments.appendChild(hint('没有装备'));
   form.appendChild(equipments);
   sec.appendChild(form);
-  r.appendChild(sec);
+  detail.appendChild(sec);
 }
 
-let enumPickerId = 0;
 function enumPicker(values, currentValue, onPick, placeholder) {
   const wrap = document.createElement('div'); wrap.className = 'enum-picker';
   const input = inputEl('text', currentValue == null ? '' : currentValue);
-  const list = document.createElement('datalist'); list.id = 'enum-options-' + (++enumPickerId);
-  for (const value of values) {
-    const option = document.createElement('option'); option.value = value; list.appendChild(option);
-  }
+  const menu = document.createElement('div'); menu.className = 'enum-options hidden';
   let accepted = input.value;
-  input.setAttribute('list', list.id); input.placeholder = placeholder || '输入搜索'; input.autocomplete = 'off';
-  input.onfocus = () => input.select();
-  input.onchange = () => {
-    const value = input.value.trim();
-    if (!values.includes(value)) {
-      alert(`“${value}”未在对应的 C# enum 中声明，请从下拉候选中选择`);
-      input.value = accepted;
-      return;
+  let rankedValues = [], activeIndex = -1, blurTimer = null;
+  input.placeholder = placeholder || '输入搜索'; input.autocomplete = 'off';
+
+  function rankValues() {
+    const query = input.value.trim().toLocaleLowerCase();
+    return values.map((value, index) => {
+      const normalized = value.toLocaleLowerCase();
+      const rank = query && normalized === query ? 0 : query && normalized.includes(query) ? 1 : 2;
+      return { value, index, rank };
+    }).sort((a, b) => a.rank - b.rank || a.index - b.index);
+  }
+
+  function appendHighlightedLabel(button, value, query) {
+    const at = query ? value.toLocaleLowerCase().indexOf(query.toLocaleLowerCase()) : -1;
+    if (at < 0) { button.textContent = value; return; }
+    button.append(document.createTextNode(value.slice(0, at)));
+    const mark = document.createElement('mark'); mark.textContent = value.slice(at, at + query.length); button.appendChild(mark);
+    button.append(document.createTextNode(value.slice(at + query.length)));
+  }
+
+  function renderOptions() {
+    rankedValues = rankValues(); activeIndex = -1; menu.innerHTML = '';
+    const query = input.value.trim();
+    let previousRank = -1;
+    rankedValues.forEach((entry, index) => {
+      const option = document.createElement('button'); option.type = 'button';
+      option.className = 'enum-option' + (entry.rank === 0 ? ' exact-match' : entry.rank === 1 ? ' partial-match' : ' unmatched');
+      if (entry.rank === 2 && previousRank < 2 && query) option.classList.add('unmatched-start');
+      appendHighlightedLabel(option, entry.value, entry.rank < 2 ? query : '');
+      option.onmousedown = event => event.preventDefault();
+      option.onclick = () => accept(entry.value);
+      menu.appendChild(option); previousRank = entry.rank;
+    });
+    menu.classList.remove('hidden');
+  }
+
+  function accept(value) {
+    if (!values.includes(value)) return;
+    const changed = value !== accepted;
+    accepted = value; input.value = value; menu.classList.add('hidden');
+    if (changed) onPick(value);
+  }
+
+  function moveActive(delta) {
+    if (menu.classList.contains('hidden')) renderOptions();
+    if (!rankedValues.length) return;
+    activeIndex = activeIndex < 0
+      ? (delta > 0 ? 0 : rankedValues.length - 1)
+      : (activeIndex + delta + rankedValues.length) % rankedValues.length;
+    menu.querySelectorAll('.enum-option').forEach((option, index) => option.classList.toggle('keyboard-active', index === activeIndex));
+    const active = menu.children[activeIndex]; if (active) active.scrollIntoView({ block: 'nearest' });
+  }
+
+  input.onfocus = () => { clearTimeout(blurTimer); input.select(); renderOptions(); };
+  input.onclick = () => { clearTimeout(blurTimer); renderOptions(); };
+  input.oninput = renderOptions;
+  input.onkeydown = event => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault(); moveActive(event.key === 'ArrowDown' ? 1 : -1);
+    } else if (event.key === 'Enter') {
+      const exact = values.find(value => value.toLocaleLowerCase() === input.value.trim().toLocaleLowerCase());
+      const chosen = exact || (activeIndex >= 0 && rankedValues[activeIndex] && rankedValues[activeIndex].value);
+      if (chosen) { event.preventDefault(); accept(chosen); }
+    } else if (event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); input.value = accepted; menu.classList.add('hidden'); input.blur();
     }
-    if (value !== accepted) { accepted = value; onPick(value); }
   };
-  wrap.append(input, list);
+  input.onblur = () => {
+    blurTimer = setTimeout(() => {
+      const exact = values.find(value => value.toLocaleLowerCase() === input.value.trim().toLocaleLowerCase());
+      if (exact) accept(exact); else input.value = accepted;
+      menu.classList.add('hidden');
+    }, 80);
+  };
+  wrap.append(input, menu);
   return wrap;
 }
 
@@ -1266,6 +1405,7 @@ function firstEnumValue(values) {
 function renderEnemyUnitConfigPanelOnly() {
   recomputeAbbrevs();
   renderRight();
+  refreshOpenConfigEditor('enemy');
   repaintAll();
 }
 
@@ -1304,13 +1444,13 @@ function moveEnemyUnit(unit, delta) {
 function renameEnemyUnit(unit, newId) {
   const oldId = unit.id;
   if (newId === oldId) return;
-  if (!/^[A-Za-z_]\w*$/.test(newId)) { alert('ID 必须是合法标识符：以字母或下划线开头，只包含字母、数字、下划线'); renderRight(); return; }
-  if (state.units.some(other => other !== unit && other.id === newId)) { alert('已经存在同名 EnemyUnit'); renderRight(); return; }
+  if (!/^[A-Za-z_]\w*$/.test(newId)) { alert('ID 必须是合法标识符：以字母或下划线开头，只包含字母、数字、下划线'); renderEnemyUnitConfigPanelOnly(); return; }
+  if (state.units.some(other => other !== unit && other.id === newId)) { alert('已经存在同名 EnemyUnit'); renderEnemyUnitConfigPanelOnly(); return; }
   const refs = state.current ? state.current.enemyPresets.reduce((sum, preset) => sum + preset.enemies.filter(enemy => enemy.name === oldId).length, 0) : 0;
   const message = `确定把 EnemyUnit「${oldId}」改名为「${newId}」？\n` +
     (refs ? `当前地图中的 ${refs} 个引用会同步修改，并需要另行保存地图。\n` : '') +
     '其他地图文件中的引用不会自动修改。';
-  if (!confirm(message)) { renderRight(); return; }
+  if (!confirm(message)) { renderEnemyUnitConfigPanelOnly(); return; }
   unit.id = newId; state.activeUnitId = newId;
   if (refs) edit(() => {
     for (const preset of state.current.enemyPresets)
@@ -1363,7 +1503,7 @@ async function saveEnemyUnits() {
   const result = await response.json().catch(() => ({}));
   if (!response.ok || !result.ok) return alert('EnemyUnits 保存失败：\n' + (result.errors || [result.error || '未知错误']).join('\n'));
   state.unitsSavedJson = JSON.stringify(state.enemyConfig); state.unitsDirty = false;
-  recomputeAbbrevs(); renderRight(); repaintAll(); toast('EnemyUnits 已保存');
+  renderEnemyUnitConfigPanelOnly(); toast('EnemyUnits 已保存');
 }
 
 function unitsForPicker() {

@@ -4,7 +4,13 @@
   --danger:#e5534b; --ok:#4caf72;
   --cell-line:rgba(0,0,0,.35);
 }
-*{box-sizing:border-box}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#566272 #191d23}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:#191d23;border-radius:8px}
+*::-webkit-scrollbar-thumb{background:#4b5665;border:2px solid #191d23;border-radius:8px}
+*::-webkit-scrollbar-thumb:hover{background:#647286}
+*::-webkit-scrollbar-corner{background:#191d23}
+*::-webkit-scrollbar-button{width:0;height:0}
 html,body{height:100%;margin:0}
 body{
   background:var(--bg); color:var(--text);
@@ -68,7 +74,7 @@ main{flex:1;display:flex;min-height:0}
 #gridWrap{flex:1;position:relative;overflow:hidden;background:
   repeating-conic-gradient(#23272e 0% 25%, #1f232a 0% 50%) 50%/24px 24px}
 #gridScroll{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform;
-  padding:28px 0 24px 28px;width:max-content}
+  padding:0 0 28px 28px;width:max-content}
 #grid{display:grid;gap:0;border:1px solid var(--line);width:max-content;user-select:none}
 .cell{position:relative;border-right:1px solid var(--cell-line);border-bottom:1px solid var(--cell-line);
   display:flex;align-items:center;justify-content:center}
@@ -96,9 +102,9 @@ main{flex:1;display:flex;min-height:0}
 
 /* rulers */
 .ruler{position:absolute;color:var(--muted);font-size:10px}
-#colRuler{top:8px;left:28px;display:flex}
+#colRuler{bottom:5px;left:28px;display:flex}
 #colRuler span{display:flex;align-items:center;justify-content:center}
-#rowRuler{top:28px;left:0;display:flex;flex-direction:column}
+#rowRuler{top:0;left:0;display:flex;flex-direction:column}
 #rowRuler span{display:flex;align-items:center;justify-content:center;width:28px}
 
 #emptyHint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted)}
@@ -112,6 +118,9 @@ main{flex:1;display:flex;min-height:0}
 .section h3{margin:0 0 8px;font-size:13px;display:flex;align-items:center;gap:8px}
 .section h3 .grow{flex:1}
 .hint{color:var(--muted);font-size:11px;margin:4px 0 8px}
+.config-entry-button{display:block;width:100%;padding:8px 12px;border-color:#49627f;
+  background:linear-gradient(135deg,#303b49,#29323e);text-align:left}
+.config-entry-button:hover{background:#35465a}
 
 /* terrain palette */
 .swatches{display:flex;flex-direction:column;gap:4px}
@@ -180,8 +189,21 @@ main{flex:1;display:flex;min-height:0}
 .unit-config .fieldrow>input,.unit-config .fieldrow>.enum-picker{flex:1;min-width:0}
 .unit-config .subhead{display:flex;align-items:center;gap:8px;margin-top:5px;padding-top:7px;
   border-top:1px solid var(--line)}
-.enum-picker{min-width:0}
+.enum-picker{position:relative;min-width:0}
 .enum-picker input{width:100%}
+.enum-options{position:absolute;z-index:30;top:calc(100% + 4px);left:0;right:0;max-height:260px;
+  overflow:auto;padding:4px;background:#171b20;border:1px solid #536071;border-radius:7px;
+  box-shadow:0 10px 28px rgba(0,0,0,.55)}
+.enum-option{display:block;width:100%;padding:5px 8px;text-align:left;border:0;border-radius:4px;
+  background:transparent;color:var(--text);white-space:nowrap}
+.enum-option:hover,.enum-option.keyboard-active{background:#354253}
+.enum-option.exact-match{background:var(--accent);color:#fff;font-weight:700}
+.enum-option.exact-match:hover,.enum-option.exact-match.keyboard-active{filter:brightness(1.12)}
+.enum-option.partial-match{color:#eef5ff}
+.enum-option.unmatched{color:var(--muted)}
+.enum-option.unmatched-start{border-top:1px solid var(--line);border-radius:0;margin-top:4px;padding-top:8px}
+.enum-option mark{background:transparent;color:var(--accent2);font-weight:700}
+.enum-option.exact-match mark{color:#fff}
 .unit-sublist{display:flex;flex-direction:column;gap:5px}
 .unit-skill-row{display:grid;grid-template-columns:minmax(0,1fr) 48px 32px;gap:5px;align-items:center}
 .unit-skill-row input[type=number]{width:100%}
@@ -205,6 +227,37 @@ main{flex:1;display:flex;min-height:0}
 .path-row label{width:120px;color:var(--muted);flex:none}
 .path-row input[type=text]{flex:1;font-family:ui-monospace,Consolas,monospace;font-size:12px}
 .path-row .path-ok{width:14px;text-align:center;font-weight:700;flex:none}
+
+/* Large standalone configuration windows */
+.config-modal{width:min(1120px,calc(100vw - 48px));height:min(780px,calc(100vh - 48px));
+  max-height:none;padding:0;overflow:hidden;display:flex;flex-direction:column}
+.config-modal-head{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);flex:none}
+.config-modal-head h2{margin:0;flex:1;font-size:16px}
+.config-modal-close{padding:3px 9px;background:transparent;border-color:transparent;font-size:16px}
+.config-modal-body{flex:1;min-height:0;overflow:auto;padding:18px 20px}
+.config-modal-body.enemy-config-body{overflow:hidden}
+.config-modal-body>.section{margin:0}
+.config-modal .tcfg{gap:8px}
+.config-modal .tcfg .row{grid-template-columns:78px minmax(180px,1fr) 150px 58px 54px 28px;gap:9px}
+.config-modal .tcfg .row select{padding:4px 6px}
+.config-modal .tcfg .row input[type=color]{width:42px}
+
+.enemy-config-layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:20px;height:100%;min-height:0}
+.enemy-config-nav{align-self:stretch;display:flex;flex-direction:column;height:100%;min-height:0;
+  overflow:hidden;padding-right:16px;border-right:1px solid var(--line)}
+.enemy-config-nav h3{margin:0 0 10px;font-size:13px}
+.enemy-config-nav-list{display:flex;flex:1;min-height:0;flex-direction:column;gap:5px;overflow-y:auto;
+  overflow-x:hidden;padding-right:6px}
+.enemy-config-unit{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;text-align:left}
+.enemy-config-unit span{overflow:hidden;text-overflow:ellipsis}
+.enemy-config-unit small{margin-left:auto;color:var(--muted);font-size:10px}
+.enemy-config-unit.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.enemy-config-unit.active small{color:#dbe9ff}
+.enemy-config-detail{height:100%;min-width:0;min-height:0;max-width:760px;overflow-y:auto;overflow-x:hidden;
+  padding-right:8px}
+.config-modal .unit-config .fieldrow>label{width:110px}
+.config-modal .unit-skill-row{grid-template-columns:minmax(280px,1fr) 70px 36px;gap:8px}
+.config-modal .unit-equipment-row{grid-template-columns:minmax(280px,1fr) 36px;gap:8px}
 
 /* toast */
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
