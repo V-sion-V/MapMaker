@@ -1,0 +1,45 @@
+{
+  "units": [
+    {
+      "id": "Caesar",
+      "profession": "Berserker",
+      "skills": [
+        { "skill": "BerserkerMastery", "level": 2 }
+      ],
+      "equipments": [ "ShortSword" ]
+    },
+    {
+      "id": "Liudmyla",
+      "profession": "Sniper",
+      "skills": [
+        { "skill": "SniperMastery", "level": 2 }
+      ],
+      "equipments": []
+    },
+    {
+      "id": "Aventurine",
+      "profession": "Reaper",
+      "skills": [
+        { "skill": "ReaperMastery", "level": 2 },
+        { "skill": "StealthMastery", "level": 1 }
+      ],
+      "equipments": [ "ShortSword" ]
+    },
+    {
+      "id": "Ubel",
+      "profession": "Caster",
+      "skills": [
+        { "skill": "ManaMastery", "level": 2 }
+      ],
+      "equipments": []
+    },
+    {
+      "id": "ZhaoYun",
+      "profession": "RiderApprentice",
+      "skills": [
+        { "skill": "RidingMastery", "level": 2 }
+      ],
+      "equipments": [ "ShortSword" ]
+    }
+  ]
+}

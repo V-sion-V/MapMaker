@@ -1,0 +1,33 @@
+# Local editor / agent state
+.agents/
+.claude/
+.codex/
+.vscode/
+.idea/
+
+# Machine-specific MapMaker preferences
+config/prefs.json
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Logs, temporary files, and backups
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*~
+
+# Unity sidecar files (this is not the Unity project)
+*.meta
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+

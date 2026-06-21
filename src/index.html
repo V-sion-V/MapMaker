@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MapMaker · 地图编辑器</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div class="brand">🗺️ MapMaker</div>
+      <div id="mapTitle">未打开地图</div>
+      <label class="ctl">主题 <select id="mapTheme" disabled></select></label>
+      <button id="inferBtn" class="mini" title="按地块推断当前地图主题" disabled>🔍 推断</button>
+      <div class="grow"></div>
+      <button id="refreshBtn" class="mini" title="从磁盘重新读取地图与配置">🔄 刷新</button>
+      <button id="settingsBtn" class="mini" title="设置 Maps/配置文件路径">⚙ 路径</button>
+      <button id="undoBtn" class="mini" title="撤销 (Ctrl+Z)" disabled>↶ 撤销</button>
+      <button id="redoBtn" class="mini" title="重做 (Ctrl+Y)" disabled>↷ 重做</button>
+      <label class="ctl">缩放
+        <input id="zoom" type="range" min="6" max="120" value="32">
+      </label>
+      <button id="saveBtn" class="primary">保存 (Ctrl+S)</button>
+    </header>
+
+    <main>
+      <!-- LEFT: map management -->
+      <aside id="left">
+        <div class="panel-head">
+          <span>地图</span>
+          <span class="head-btns">
+            <button id="themesBtn" class="mini" title="新建/删除主题">🏷 主题</button>
+            <button id="newMapBtn" class="mini">＋ 新建</button>
+          </span>
+        </div>
+        <ul id="mapList"></ul>
+        <div id="mapActions">
+          <button id="dupBtn" class="mini">复制</button>
+          <button id="renameBtn" class="mini">改名</button>
+          <button id="resizeBtn" class="mini">尺寸</button>
+          <button id="delBtn" class="mini danger">删除</button>
+        </div>
+      </aside>
+
+      <!-- CENTER: grid canvas -->
+      <section id="center">
+        <div id="modeTabs">
+          <button data-mode="terrain" class="active">🎨 地形</button>
+          <button data-mode="enemy">👾 敌人</button>
+          <button data-mode="deploy">🚩 部署区</button>
+        </div>
+        <div id="gridWrap">
+          <div id="gridScroll">
+            <div id="colRuler" class="ruler"></div>
+            <div id="rowRuler" class="ruler"></div>
+            <div id="grid"></div>
+          </div>
+          <div id="emptyHint" class="hidden">还没有地图，点击左上角「＋ 新建」开始。</div>
+        </div>
+        <div id="coordReadout">移动到格子上查看坐标</div>
+      </section>
+
+      <!-- RIGHT: contextual panel -->
+      <aside id="right"></aside>
+    </main>
+  </div>
+
+  <div id="modalLayer" class="hidden"></div>
+  <div id="toast" class="hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

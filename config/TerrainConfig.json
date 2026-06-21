@@ -1,0 +1,127 @@
+{
+  "themes": [
+    "Grassland",
+    "Desert"
+  ],
+  "terrains": [
+    {
+      "id": 0,
+      "name": "None",
+      "color": "#1b1b1b",
+      "theme": "",
+      "deployable": false
+    },
+    {
+      "id": 1,
+      "name": "Plain",
+      "color": "#7cb342",
+      "theme": "Grassland",
+      "deployable": true
+    },
+    {
+      "id": 2,
+      "name": "Wood",
+      "color": "#558b2f",
+      "theme": "Grassland",
+      "deployable": true
+    },
+    {
+      "id": 3,
+      "name": "Forest",
+      "color": "#33691e",
+      "theme": "Grassland",
+      "deployable": true
+    },
+    {
+      "id": 4,
+      "name": "Hill",
+      "color": "#a1887f",
+      "theme": "Grassland",
+      "deployable": true
+    },
+    {
+      "id": 5,
+      "name": "Mountain",
+      "color": "#6d4c41",
+      "theme": "Grassland",
+      "deployable": false
+    },
+    {
+      "id": 6,
+      "name": "Shallow",
+      "color": "#4fc3f7",
+      "theme": "Grassland",
+      "deployable": true
+    },
+    {
+      "id": 7,
+      "name": "DeepWater",
+      "color": "#1565c0",
+      "theme": "Grassland",
+      "deployable": false
+    },
+    {
+      "id": 8,
+      "name": "Fortress",
+      "color": "#9e9e9e",
+      "theme": "Grassland",
+      "deployable": true
+    },
+    {
+      "id": 11,
+      "name": "Sand",
+      "color": "#f0d68a",
+      "theme": "Desert",
+      "deployable": true
+    },
+    {
+      "id": 12,
+      "name": "Dune",
+      "color": "#e0b96b",
+      "theme": "Desert",
+      "deployable": true
+    },
+    {
+      "id": 13,
+      "name": "DesertMountain",
+      "color": "#b07d3c",
+      "theme": "Desert",
+      "deployable": false
+    },
+    {
+      "id": 14,
+      "name": "Oasis",
+      "color": "#26a69a",
+      "theme": "Desert",
+      "deployable": true
+    },
+    {
+      "id": 15,
+      "name": "DesertRiver",
+      "color": "#29b6f6",
+      "theme": "Desert",
+      "deployable": true
+    },
+    {
+      "id": 16,
+      "name": "SandStorm",
+      "color": "#cdb38b",
+      "theme": "Desert",
+      "deployable": true
+    },
+    {
+      "id": 17,
+      "name": "Pyramid",
+      "color": "#d4a017",
+      "theme": "Desert",
+      "deployable": true
+    },
+    {
+      "id": 18,
+      "name": "DesertFortress",
+      "color": "#8d6e63",
+      "theme": "Desert",
+      "deployable": true
+    }
+  ]
+}
