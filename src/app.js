@@ -225,7 +225,6 @@ async function openSettings() {
   };
   actions.append(reset, cancel, ok); box.appendChild(actions);
   layer.innerHTML = ''; layer.appendChild(box);
-  layer.onclick = e => { if (e.target === layer) close(); };
   function close() { layer.classList.add('hidden'); layer.innerHTML = ''; layer.onclick = null; }
 }
 
@@ -731,7 +730,6 @@ function manageThemes() {
   }
   render();
   layer.innerHTML = ''; layer.appendChild(box);
-  layer.onclick = e => { if (e.target === layer) { layer.classList.add('hidden'); layer.innerHTML = ''; populateMapThemeSelect(); renderMapList(); renderRight(); if (state.mode === 'flow') renderFlowEditor(); } };
 }
 
 /* ------------------------------------------------------------------ *
@@ -1099,6 +1097,7 @@ function renderTerrainConfigEntry(r) {
 
 let activeConfigKind = null;
 let configEditorKeydown = null;
+let pendingTerrainConfigFocus = null;
 
 function openConfigEditor(kind) {
   if (kind === 'enemy' && !state.units.some(unit => unit.id === state.activeUnitId) && state.units[0]) {
@@ -1107,14 +1106,17 @@ function openConfigEditor(kind) {
   const layer = $('#modalLayer'); layer.classList.remove('hidden'); layer.innerHTML = '';
   const box = document.createElement('div'); box.className = 'modal config-modal';
   const head = document.createElement('div'); head.className = 'config-modal-head';
+  const heading = document.createElement('div'); heading.className = 'config-modal-heading';
   const title = document.createElement('h2'); title.id = 'configEditorTitle';
+  const subtitle = document.createElement('div'); subtitle.className = 'config-modal-subtitle hidden'; subtitle.id = 'configEditorSubtitle';
+  heading.append(title, subtitle);
   const close = mkIconBtn('x', '', closeConfigEditor); close.className = 'config-modal-close'; close.title = '关闭';
-  head.append(title, close);
+  head.append(heading, close);
   const body = document.createElement('div'); body.className = 'config-modal-body'; body.id = 'configEditorBody';
-  box.append(head, body); layer.appendChild(box);
+  const footer = document.createElement('div'); footer.className = 'config-modal-footer hidden'; footer.id = 'configEditorFooter';
+  box.append(head, body, footer); layer.appendChild(box);
   activeConfigKind = kind;
   renderOpenConfigEditor();
-  layer.onclick = event => { if (event.target === layer) closeConfigEditor(); };
   configEditorKeydown = event => { if (event.key === 'Escape') closeConfigEditor(); };
   document.addEventListener('keydown', configEditorKeydown);
 }
@@ -1125,13 +1127,24 @@ function configEditorTitle() {
     : `${icon('settings')}<span>EnemyUnit 配置${state.unitsDirty ? ' ●' : ''}</span>`;
 }
 
+function configEditorSubtitle() {
+  return activeConfigKind === 'terrain'
+    ? '增删改地形（id / 名称 / 主题 / 颜色），改完点「保存配置」。不会改动 TileType.cs。'
+    : '';
+}
+
 function renderOpenConfigEditor() {
   const body = $('#configEditorBody');
   if (!body || !activeConfigKind) return;
+  const footer = $('#configEditorFooter');
   const scrollTop = body.scrollTop;
   body.innerHTML = '';
+  footer.innerHTML = ''; footer.classList.add('hidden');
   body.classList.toggle('enemy-config-body', activeConfigKind === 'enemy');
   $('#configEditorTitle').innerHTML = configEditorTitle();
+  const subtitle = $('#configEditorSubtitle');
+  subtitle.textContent = configEditorSubtitle();
+  subtitle.classList.toggle('hidden', !subtitle.textContent);
   if (activeConfigKind === 'terrain') renderTerrainConfig(body);
   else renderEnemyUnitConfig(body);
   body.scrollTop = scrollTop;
@@ -1145,20 +1158,42 @@ function closeConfigEditor() {
   const layer = $('#modalLayer');
   layer.classList.add('hidden'); layer.innerHTML = ''; layer.onclick = null;
   if (configEditorKeydown) document.removeEventListener('keydown', configEditorKeydown);
-  configEditorKeydown = null; activeConfigKind = null;
+  configEditorKeydown = null; activeConfigKind = null; pendingTerrainConfigFocus = null;
+}
+
+function sortTerrainsById() {
+  state.terrains.sort((a, b) => {
+    const aId = Number(a.id), bId = Number(b.id);
+    if (!Number.isFinite(aId)) return Number.isFinite(bId) ? 1 : 0;
+    if (!Number.isFinite(bId)) return -1;
+    return aId - bId;
+  });
 }
 
 function renderTerrainConfig(r) {
-  const sec = section('地形配置', 'settings');
-  sec.appendChild(hint('增删改地形（id / 名称 / 主题 / 颜色），改完点「保存配置」。不会改动 TileType.cs。'));
+  sortTerrainsById();
+  const focusRequest = pendingTerrainConfigFocus;
+  pendingTerrainConfigFocus = null;
+  let focusRow = null, focusInput = null;
   const tbl = document.createElement('div'); tbl.className = 'tcfg';
   const head = document.createElement('div'); head.className = 'row head';
   head.innerHTML = '<span>id</span><span>名称</span><span>主题</span><span title="可部署：不勾选则该地块不能放置敌人">部署</span><span>色</span><span></span>';
   tbl.appendChild(head);
-  state.terrains.forEach((t, i) => {
-    const row = document.createElement('div'); row.className = 'row';
-    const id = inputEl('number', t.id); id.onchange = () => { t.id = +id.value; indexTerrains(); repaintAll(); };
-    const nm = inputEl('text', t.name); nm.onchange = () => { t.name = nm.value.trim(); };
+  state.terrains.forEach(t => {
+    const row = document.createElement('div'); row.className = 'row'; row.dataset.terrainId = String(t.id);
+    const id = inputEl('number', t.id); id.className = 'terrain-id-input';
+    const commitId = () => {
+      const nextId = Number(id.value);
+      if (nextId === Number(t.id)) return;
+      t.id = nextId; sortTerrainsById(); indexTerrains(); renderRight(); repaintAll();
+      pendingTerrainConfigFocus = { terrain: t, field: 'id', block: 'nearest' };
+      refreshOpenConfigEditor('terrain');
+    };
+    id.onchange = commitId;
+    id.onblur = commitId;
+    id.onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); commitId(); } };
+    const nm = inputEl('text', t.name); nm.className = 'terrain-name-input';
+    nm.onchange = () => { t.name = nm.value.trim(); };
     const th = document.createElement('select');
     const og = document.createElement('option'); og.value = ''; og.textContent = '(通用)'; th.appendChild(og);
     for (const tn of state.themes) { const o = document.createElement('option'); o.value = tn; o.textContent = tn; th.appendChild(o); }
@@ -1172,28 +1207,43 @@ function renderTerrainConfig(r) {
     const del = document.createElement('button'); del.className = 'del'; del.innerHTML = icon('x');
     del.title = '删除该地形'; del.onclick = async () => {
       if (await showConfirm(`删除地形「${t.name}」(#${t.id})？使用它的地图格子会变为未知色。`, { danger: true })) {
-        state.terrains.splice(i, 1); indexTerrains(); renderRight(); repaintAll(); refreshOpenConfigEditor('terrain');
+        state.terrains.splice(state.terrains.indexOf(t), 1); indexTerrains(); renderRight(); repaintAll(); refreshOpenConfigEditor('terrain');
       }
     };
     row.append(id, nm, th, dep, col, del); tbl.appendChild(row);
+    if (focusRequest && focusRequest.terrain === t) {
+      focusRow = row;
+      focusInput = focusRequest.field === 'id' ? id : nm;
+    }
   });
-  sec.appendChild(tbl);
+  r.appendChild(tbl);
 
-  const bar = document.createElement('div'); bar.className = 'toolrow'; bar.style.marginTop = '10px';
+  const footer = $('#configEditorFooter'); footer.classList.remove('hidden');
+  const bar = document.createElement('div'); bar.className = 'toolrow terrain-config-actions';
   bar.append(
     mkIconBtn('plus', '新增', () => {
-      const nextId = state.terrains.reduce((mx, t) => Math.max(mx, t.id), 0) + 1;
-      state.terrains.push({ id: nextId, name: 'NewTile', color: '#cccccc', theme: effectiveTheme(), deployable: true });
+      const nextId = state.terrains.reduce((mx, t) => {
+        const id = Number(t.id); return Number.isFinite(id) ? Math.max(mx, id) : mx;
+      }, 0) + 1;
+      const terrain = { id: nextId, name: 'NewTile', color: '#cccccc', theme: effectiveTheme(), deployable: true };
+      state.terrains.push(terrain); sortTerrainsById();
+      pendingTerrainConfigFocus = { terrain, field: 'name', block: 'end' };
       indexTerrains(); renderRight(); refreshOpenConfigEditor('terrain');
     }),
     mkIconBtn('download', '从TileType导入', importFromTileType),
     (() => { const b = mkIconBtn('save', '保存配置', saveTerrainConfig); b.className = 'mini primary'; return b; })(),
   );
-  sec.appendChild(bar);
-  r.appendChild(sec);
+  footer.appendChild(bar);
+
+  if (focusRow && focusInput) requestAnimationFrame(() => {
+    focusInput.focus({ preventScroll: true }); focusInput.select();
+    focusRow.scrollIntoView({ block: focusRequest.block, inline: 'nearest' });
+    if (focusRequest.block === 'end') r.scrollTop = r.scrollHeight;
+  });
 }
 
 async function saveTerrainConfig() {
+  sortTerrainsById();
   const ids = state.terrains.map(t => t.id);
   if (new Set(ids).size !== ids.length) return showAlert('存在重复的地形 id，请修正后再保存');
   const r = await API.saveTerrains({ themes: state.themes, terrains: state.terrains });
@@ -1212,7 +1262,7 @@ async function importFromTileType() {
       added++;
     }
   }
-  indexTerrains(); populateMapThemeSelect(); renderRight(); refreshOpenConfigEditor('terrain');
+  sortTerrainsById(); indexTerrains(); populateMapThemeSelect(); renderRight(); refreshOpenConfigEditor('terrain');
   showAlert(added ? `导入了 ${added} 个新地形，请检查颜色后点「保存配置」` : '没有发现新的地形类型');
 }
 
@@ -1323,7 +1373,9 @@ function renderEnemyUnitConfig(r) {
   const selected = state.units.find(u => u.id === state.activeUnitId);
   const layout = document.createElement('div'); layout.className = 'enemy-config-layout';
   const nav = document.createElement('div'); nav.className = 'enemy-config-nav';
-  const navTitle = document.createElement('h3'); navTitle.textContent = `EnemyUnits (${state.units.length})`; nav.appendChild(navTitle);
+  const navHead = document.createElement('div'); navHead.className = 'enemy-config-nav-head';
+  const navTitle = document.createElement('h3'); navTitle.textContent = `EnemyUnits (${state.units.length})`;
+  navHead.append(navTitle, mkIconBtn('plus', '新增', addEnemyUnit)); nav.appendChild(navHead);
   const navList = document.createElement('div'); navList.className = 'enemy-config-nav-list';
   for (const unit of state.units) {
     const item = document.createElement('button');
@@ -1336,13 +1388,12 @@ function renderEnemyUnitConfig(r) {
   const detail = document.createElement('div'); detail.className = 'enemy-config-detail';
   layout.append(nav, detail); r.appendChild(layout);
 
-  const sec = section('EnemyUnit 配置' + (state.unitsDirty ? ' ●' : ''), 'settings');
+  const sec = section('编辑单位', 'settings');
   const enums = state.enemyEnums;
   sec.appendChild(hint(`枚举候选：职业 ${enums.professions.length} · 技能 ${enums.skills.length} · 装备 ${enums.equipments.length}。输入可搜索，但保存值必须来自对应的 C# enum。`));
 
   const tools = document.createElement('div'); tools.className = 'toolrow unit-config-tools';
   tools.append(
-    mkIconBtn('plus', '新增', addEnemyUnit),
     mkIconBtn('copy', '复制', () => duplicateEnemyUnit(selected)),
     (() => { const b = mkIconBtn('arrowUp', '', () => moveEnemyUnit(selected, -1)); b.title = '上移'; return b; })(),
     (() => { const b = mkIconBtn('arrowDown', '', () => moveEnemyUnit(selected, 1)); b.title = '下移'; return b; })(),
@@ -2206,7 +2257,6 @@ function showMessage({ title = '提示', message = '', confirmText = '确定', c
     ok.onclick = () => close(true);
     actions.appendChild(ok); box.appendChild(actions);
     layer.innerHTML = ''; layer.appendChild(box); ok.focus();
-    layer.onclick = e => { if (e.target === layer) close(cancelText != null ? false : true); };
     function onKey(e) {
       if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); close(true); }
       else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(cancelText != null ? false : true); }
@@ -2254,7 +2304,6 @@ function showModal(title, fields) {
     function done() { const v = {}; for (const k in inputs) v[k] = inputs[k].value; close(v); }
     function close(val) { layer.classList.add('hidden'); layer.innerHTML = ''; layer.onclick = null; document.removeEventListener('keydown', onKey); resolve(val || null); }
     ok.onclick = done;
-    layer.onclick = e => { if (e.target === layer) close(null); };
     function onKey(e) { if (e.key === 'Enter') done(); if (e.key === 'Escape') close(null); }
     document.addEventListener('keydown', onKey);
   });

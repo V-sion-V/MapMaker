@@ -355,21 +355,30 @@ main{flex:1;display:flex;min-height:0}
 /* Large standalone configuration windows */
 .config-modal{width:min(1120px,calc(100vw - 48px));height:min(780px,calc(100vh - 48px));
   max-height:none;padding:0;overflow:hidden;display:flex;flex-direction:column}
-.config-modal-head{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);flex:none}
-.config-modal-head h2{margin:0;flex:1;font-size:16px}
+.config-modal-head{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line);flex:none}
+.config-modal-heading{flex:1;min-width:0}
+.config-modal-head h2{margin:0;font-size:16px}
+.config-modal-subtitle{margin-top:3px;color:var(--muted);font-size:11px;line-height:1.4}
 .config-modal-close{padding:3px 9px;background:transparent;border-color:transparent;font-size:16px}
 .config-modal-body{flex:1;min-height:0;overflow:auto;padding:18px 20px}
 .config-modal-body.enemy-config-body{overflow:hidden}
+.config-modal-footer{display:flex;align-items:center;flex:none;padding:10px 20px;border-top:1px solid var(--line);
+  background:var(--panel)}
+.terrain-config-actions{width:100%;margin:0}
+.terrain-config-actions .primary{margin-left:auto}
 .config-modal-body>.section{margin:0}
 .config-modal .tcfg{gap:8px}
 .config-modal .tcfg .row{grid-template-columns:78px minmax(180px,1fr) 150px 58px 54px 28px;gap:9px}
 .config-modal .tcfg .row select{padding:4px 6px}
 .config-modal .tcfg .row input[type=color]{width:42px}
+.config-modal .tcfg .row:not(.head):focus-within{outline:1px solid var(--accent);outline-offset:3px;
+  background:rgba(79,157,255,.06)}
 
 .enemy-config-layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:20px;height:100%;min-height:0}
 .enemy-config-nav{align-self:stretch;display:flex;flex-direction:column;height:100%;min-height:0;
   overflow:hidden;padding-right:16px;border-right:1px solid var(--line)}
-.enemy-config-nav h3{margin:0 0 10px;font-size:13px}
+.enemy-config-nav-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.enemy-config-nav-head h3{flex:1;margin:0;font-size:13px}
 .enemy-config-nav-list{display:flex;flex:1;min-height:0;flex-direction:column;gap:5px;overflow-y:auto;
   overflow-x:hidden;padding-right:6px}
 .enemy-config-unit{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;text-align:left}
