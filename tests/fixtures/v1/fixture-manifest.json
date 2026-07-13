@@ -1,0 +1,10 @@
+{
+  "fixtureVersion": 1,
+  "source": "IoniaCrusader2/Assets/StreamingAssets/Maps/Campidoglio.json",
+  "capturedAt": "2026-07-13",
+  "schema": "mapmaker-v1",
+  "mapFile": "Campidoglio.json",
+  "mapName": "Campidoglio",
+  "formationCount": 2,
+  "semanticSha256": "562ffa6285ba84029b18400dddbcdb56103678050f43081de008f42a6cee9171"
+}
