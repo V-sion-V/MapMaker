@@ -1,17 +1,27 @@
 'use strict';
 
+async function validatedFetch(url, options) {
+  const response = await fetch(url, options);
+  try {
+    const data = await response.clone().json();
+    if (data.validation) updateProjectStatus(data.validation);
+  } catch (_) { /* non-JSON responses keep the previous read-only status */ }
+  return response;
+}
+
 /* ------------------------------------------------------------------ *
  * API
  * ------------------------------------------------------------------ */
 const API = {
+  async projectStatus() { return (await fetch('/api/project-status')).json(); },
   async maps()        { return (await fetch('/api/maps')).json(); },
   async mapThemes()   { return (await fetch('/api/map-themes')).json(); },
   async map(n)        { return (await fetch('/api/maps/' + encodeURIComponent(n))).json(); },
-  saveMap(n, obj)     { return fetch('/api/maps/' + encodeURIComponent(n),
+  saveMap(n, obj)     { return validatedFetch('/api/maps/' + encodeURIComponent(n),
                           { method:'PUT', headers:{'Content-Type':'application/json'},
                             body: JSON.stringify(obj) }); },
-  delMap(n)           { return fetch('/api/maps/' + encodeURIComponent(n), { method:'DELETE' }); },
-  saveMapThemes(obj)  { return fetch('/api/map-themes',
+  delMap(n)           { return validatedFetch('/api/maps/' + encodeURIComponent(n), { method:'DELETE' }); },
+  saveMapThemes(obj)  { return validatedFetch('/api/map-themes',
                           { method:'PUT', headers:{'Content-Type':'application/json'},
                             body: JSON.stringify(obj) }); },
   async terrains()    { return (await fetch('/api/terrains')).json(); },
@@ -19,7 +29,7 @@ const API = {
                           { method:'PUT', headers:{'Content-Type':'application/json'},
                             body: JSON.stringify(obj) }); },
   async enemies()     { return (await fetch('/api/enemies')).json(); },
-  saveEnemies(obj)    { return fetch('/api/enemies',
+  saveEnemies(obj)    { return validatedFetch('/api/enemies',
                           { method:'PUT', headers:{'Content-Type':'application/json'},
                             body: JSON.stringify(obj) }); },
   async enemyEnums()  { return (await fetch('/api/enemy-enums')).json(); },
@@ -37,6 +47,7 @@ const API = {
  * State
  * ------------------------------------------------------------------ */
 const state = {
+  projectStatus: null,
   terrains: [], terrainById: {}, themes: [],
   units: [], enemyConfig: { units: [] },
   enemyEnums: { professions: [], skills: [], equipments: [] },
@@ -116,8 +127,8 @@ function mkIconBtn(name, label, fn) {
 async function init() {
   hydrateIcons();
   try {
-    const [t, e, enemyEnums, m, flow] = await Promise.all([
-      API.terrains(), API.enemies(), API.enemyEnums(), API.maps(), API.mapThemes(),
+    const [t, e, enemyEnums, m, flow, projectStatus] = await Promise.all([
+      API.terrains(), API.enemies(), API.enemyEnums(), API.maps(), API.mapThemes(), API.projectStatus(),
     ]);
     state.terrains = t.terrains || [];
     state.themes = t.themes || [];
@@ -125,6 +136,7 @@ async function init() {
     setEnemyConfig(e); setEnemyEnums(enemyEnums);
     state.maps = m.maps || [];
     setFlowConfig(flow);
+    updateProjectStatus(projectStatus);
   } catch (err) {
     await showAlert('无法连接本地服务，请确认 start.bat 正在运行。\n' + err, '连接失败');
     return;
@@ -140,6 +152,33 @@ async function init() {
   else { $('#emptyHint').classList.remove('hidden'); updateTitle(); }
 }
 
+function updateProjectStatus(status) {
+  state.projectStatus = status || null;
+  const badge = $('#projectStatus');
+  if (!badge) return;
+  badge.classList.remove('valid', 'invalid', 'staging');
+  if (!status || !status.available) {
+    badge.textContent = 'v1 · validator unavailable';
+    badge.classList.add('staging');
+    badge.title = (status && status.error) || 'Ionia project not detected';
+    return;
+  }
+  const schema = status.schemaVersion == null ? '?' : status.schemaVersion;
+  const verdict = status.tracked === false ? 'STAGING' : (status.success ? 'VALID' : 'INVALID');
+  badge.textContent = `v1 → schema ${schema} · ${status.mode} · ${verdict}`;
+  badge.classList.add(verdict === 'VALID' ? 'valid' : (verdict === 'INVALID' ? 'invalid' : 'staging'));
+  badge.title = `${status.configVersion || ''}\n${status.projectRoot || ''}`.trim();
+}
+
+function validationFailure(result) {
+  const validation = (result && result.validation) || {};
+  const diagnostics = validation.diagnostics || [];
+  const lines = diagnostics.slice(0, 10).map(value =>
+    `[${value.code || 'VALIDATION'}] ${value.configPath || ''} ${value.jsonPointer || ''}: ${value.message || ''}`);
+  if (diagnostics.length > 10) lines.push(`... ${diagnostics.length - 10} more`);
+  return lines.join('\n') || validation.error || (result && result.error) || 'authoritative validation failed';
+}
+
 function indexTerrains() {
   state.terrainById = {};
   for (const t of state.terrains) state.terrainById[t.id] = t;
@@ -149,16 +188,17 @@ function indexTerrains() {
 async function refreshAll() {
   if ((state.dirty || state.unitsDirty || state.flowDirty) &&
       !await showConfirm('刷新会丢弃未保存的地图、EnemyUnit 或关卡流程修改并从磁盘重读，继续？')) return;
-  let t, e, enemyEnums, m, flow;
+  let t, e, enemyEnums, m, flow, projectStatus;
   try {
-    [t, e, enemyEnums, m, flow] = await Promise.all([
-      API.terrains(), API.enemies(), API.enemyEnums(), API.maps(), API.mapThemes(),
+    [t, e, enemyEnums, m, flow, projectStatus] = await Promise.all([
+      API.terrains(), API.enemies(), API.enemyEnums(), API.maps(), API.mapThemes(), API.projectStatus(),
     ]);
   } catch (err) { return showAlert('刷新失败：' + err); }
   state.dirty = false;                       // already confirmed -> skip loadMap's prompt
   state.terrains = t.terrains || []; state.themes = t.themes || [];
   indexTerrains(); setEnemyConfig(e); setEnemyEnums(enemyEnums); state.maps = m.maps || [];
   setFlowConfig(flow);
+  updateProjectStatus(projectStatus);
   const keep = (state.currentName && state.maps.some(x => x.name === state.currentName))
     ? state.currentName : (state.maps[0] && state.maps[0].name);
   recomputeAbbrevs(); populateMapThemeSelect(); renderMapList();
@@ -426,11 +466,13 @@ async function saveMap() {
   if (!state.current) return;
   state.current.mapName = state.currentName;
   const r = await API.saveMap(state.currentName, state.current);
-  if (r.ok) {
+  const result = await r.json().catch(() => ({}));
+  if (r.ok && result.saved) {
     state.savedJson = snapshot(); state.dirty = false;
     setMapEntryTheme(state.currentName, state.current.theme || '');
-    updateTitle(); renderMapList(); toast('已保存 ' + state.currentName);
-  } else showAlert('保存失败');
+    updateTitle(); renderMapList();
+    toast((result.legal ? 'Validated save ' : 'Staging save ') + state.currentName);
+  } else showAlert('保存失败 / authoritative validation rejected:\n' + validationFailure(result));
 }
 
 function saveCurrent() {
@@ -462,7 +504,9 @@ async function newMap() {
     enemyPresets: [{ weight: 100, enemies: [] }],
   };
   if (theme) m.theme = theme;
-  await API.saveMap(v.name, m);
+  const response = await API.saveMap(v.name, m);
+  if (!response.ok) return showAlert('Create failed:\n' + validationFailure(
+    await response.json().catch(() => ({}))));
   addMapEntry(v.name, theme);
   setCurrent(v.name, m);
   toast('已创建 ' + v.name);
@@ -476,7 +520,9 @@ async function duplicateMap() {
   if (mapNameExists(v.name)) return showAlert('已存在同名地图');
   const copy = JSON.parse(JSON.stringify(state.current));
   copy.mapName = v.name;
-  await API.saveMap(v.name, copy);
+  const response = await API.saveMap(v.name, copy);
+  if (!response.ok) return showAlert('Duplicate failed:\n' + validationFailure(
+    await response.json().catch(() => ({}))));
   addMapEntry(v.name, copy.theme || '');
   setCurrent(v.name, copy);
   toast('已复制为 ' + v.name);
@@ -490,8 +536,16 @@ async function renameMap() {
   if (!/^[A-Za-z0-9_\-]+$/.test(v.name)) return showAlert('名称非法');
   if (mapNameExists(v.name)) return showAlert('已存在同名地图');
   state.current.mapName = v.name;
-  await API.saveMap(v.name, state.current);
-  await API.delMap(old);
+  const created = await API.saveMap(v.name, state.current);
+  if (!created.ok) return showAlert('Rename staging save failed:\n' + validationFailure(
+    await created.json().catch(() => ({}))));
+  const removed = await API.delMap(old);
+  if (!removed.ok) {
+    await API.delMap(v.name);
+    state.current.mapName = old;
+    return showAlert('Tracked map rename was rejected; update the project manifest first.\n' +
+      validationFailure(await removed.json().catch(() => ({}))));
+  }
   state.maps = state.maps.filter(m => m.name !== old);
   addMapEntry(v.name, state.current.theme || '');
   state.currentName = v.name; state.savedJson = snapshot(); state.dirty = false;
@@ -503,7 +557,9 @@ async function deleteMap() {
   if (!state.current) return;
   if (!await showConfirm(`确定删除地图「${state.currentName}」？此操作不可撤销。`, { danger: true })) return;
   const gone = state.currentName;
-  await API.delMap(gone);
+  const response = await API.delMap(gone);
+  if (!response.ok) return showAlert('Delete rejected by authoritative validation:\n' +
+    validationFailure(await response.json().catch(() => ({}))));
   state.maps = state.maps.filter(m => m.name !== gone);
   state.current = null; state.currentName = null; state.dirty = false;
   if (state.maps.length) loadMap(state.maps[0].name);
@@ -1660,7 +1716,8 @@ async function saveEnemyUnits() {
   if (errors.length) return showAlert('EnemyUnits 校验失败：\n' + errors.slice(0, 12).join('\n') + (errors.length > 12 ? `\n……另有 ${errors.length - 12} 项` : ''));
   const response = await API.saveEnemies(state.enemyConfig);
   const result = await response.json().catch(() => ({}));
-  if (!response.ok || !result.ok) return showAlert('EnemyUnits 保存失败：\n' + (result.errors || [result.error || '未知错误']).join('\n'));
+  if (!response.ok || !result.ok) return showAlert('EnemyUnits 保存失败：\n' +
+    ((result.errors && result.errors.join('\n')) || validationFailure(result)));
   state.unitsSavedJson = JSON.stringify(state.enemyConfig); state.unitsDirty = false;
   renderEnemyUnitConfigPanelOnly(); toast('EnemyUnits 已保存');
 }
@@ -2111,7 +2168,7 @@ async function saveFlowConfig() {
   if (!response.ok) {
     let data = {};
     try { data = await response.json(); } catch (_) { /* use fallback */ }
-    return showAlert('保存失败：\n' + ((data.errors || [data.error || response.statusText]).join('\n')));
+    return showAlert('保存失败：\n' + ((data.errors && data.errors.join('\n')) || validationFailure(data)));
   }
   state.flowSavedJson = flowSnapshot(); state.flowDirty = false;
   updateTitle(); renderFlowStats(); toast('关卡流程已保存');

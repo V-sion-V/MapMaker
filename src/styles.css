@@ -47,6 +47,11 @@ label.ctl{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:1
   height:var(--topbar-height);flex:0 0 var(--topbar-height);
   background:var(--panel);border-bottom:1px solid var(--line)}
 .brand{font-weight:700;font-size:15px;display:flex;align-items:center;gap:7px}
+.project-status{align-self:center;white-space:nowrap;font-size:11px;padding:3px 8px;
+  border:1px solid var(--line);border-radius:12px;color:var(--muted);background:#1b1f25}
+.project-status.valid{color:var(--ok);border-color:var(--ok)}
+.project-status.invalid{color:#ff8a80;border-color:var(--danger)}
+.project-status.staging{color:var(--accent2);border-color:var(--accent2)}
 .topbar-actions{display:flex;align-items:center;gap:8px}
 #mapTitle{color:var(--accent2);font-weight:600;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis;min-width:64px;max-width:280px;flex:0 1 auto}

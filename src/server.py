@@ -19,6 +19,7 @@ import sys
 import json
 import math
 import socket
+import subprocess
 import threading
 import webbrowser
 import urllib.parse
@@ -515,6 +516,170 @@ def validate_map_themes(obj):
 
 
 # --------------------------------------------------------------------------- #
+# Ionia project validator bridge
+# --------------------------------------------------------------------------- #
+VALIDATION_LOCK = threading.Lock()
+
+
+def find_project_root(*paths):
+    """Find the Ionia root without freezing a machine-specific absolute path."""
+    for path in paths:
+        if not path:
+            continue
+        current = os.path.abspath(path)
+        if not os.path.isdir(current):
+            current = os.path.dirname(current)
+        while current and os.path.dirname(current) != current:
+            manifest = os.path.join(current, "Assets", "StreamingAssets", "config-manifest.json")
+            command = os.path.join(current, "Tools", "content.cmd")
+            if os.path.isfile(manifest) and os.path.isfile(command):
+                return current
+            current = os.path.dirname(current)
+    return None
+
+
+def project_context():
+    root = find_project_root(MAPS_DIR, ENEMY_FILE, MAP_THEMES_FILE)
+    if not root:
+        return None
+    content_root = os.path.join(root, "Assets", "StreamingAssets")
+    manifest_path = os.path.join(content_root, "config-manifest.json")
+    with open(manifest_path, encoding="utf-8-sig") as stream:
+        manifest = json.load(stream)
+    mode = os.environ.get("IONIA_CONTENT_MODE", manifest.get("validationMode", "development"))
+    tracked = set()
+    for key in ("gameplayFiles", "nativeDefinitionFiles", "presentationFiles", "localizationFiles"):
+        tracked.update(str(value).replace("\\", "/") for value in manifest.get(key, []))
+    mapping = (manifest.get("legacyImport") or {}).get("mappingPath")
+    if mapping:
+        tracked.add(str(mapping).replace("\\", "/"))
+    return {
+        "projectRoot": root,
+        "contentRoot": content_root,
+        "command": os.path.join(root, "Tools", "content.cmd"),
+        "schemaVersion": manifest.get("schemaVersion"),
+        "configVersion": manifest.get("configVersion"),
+        "mode": mode,
+        "trackedFiles": tracked,
+    }
+
+
+def parse_cli_payload(output):
+    """Extract the structured report after any dotnet build chatter."""
+    decoder = json.JSONDecoder()
+    payload = {}
+    for index, char in enumerate(output or ""):
+        if char != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(output[index:])
+            if isinstance(value, dict) and "success" in value:
+                payload = value
+        except json.JSONDecodeError:
+            pass
+    return payload
+
+
+def validate_project(target_path=None):
+    """Run the shared CLI. MapMaker never claims legality from its local checks."""
+    try:
+        context = project_context()
+    except Exception as ex:
+        return {"available": False, "success": False, "legal": False,
+                "editorSchema": "mapmaker-v1", "error": str(ex), "diagnostics": []}
+    if not context:
+        return {"available": False, "success": False, "legal": False,
+                "editorSchema": "mapmaker-v1", "error": "Ionia project not detected",
+                "diagnostics": []}
+
+    relative = None
+    tracked = None
+    if target_path:
+        try:
+            relative = os.path.relpath(os.path.abspath(target_path),
+                                       context["contentRoot"]).replace("\\", "/")
+            tracked = relative in context["trackedFiles"] and not relative.startswith("../")
+        except ValueError:
+            tracked = False
+    args = [context["command"], "validate", "--root", context["contentRoot"],
+            "--mode", context["mode"]]
+    if os.name == "nt":
+        args = ["cmd", "/d", "/c"] + args
+    try:
+        completed = subprocess.run(args, cwd=context["projectRoot"], capture_output=True,
+                                   text=True, encoding="utf-8", errors="replace", timeout=120)
+        payload = parse_cli_payload(completed.stdout)
+        success = completed.returncode == 0 and payload.get("success") is True
+        result = {
+            "available": True,
+            "success": success,
+            "legal": success and tracked is not False,
+            "editorSchema": "mapmaker-v1",
+            "schemaVersion": context["schemaVersion"],
+            "configVersion": context["configVersion"],
+            "mode": context["mode"],
+            "projectRoot": context["projectRoot"],
+            "contentRoot": context["contentRoot"],
+            "target": relative,
+            "tracked": tracked,
+            "exitCode": completed.returncode,
+            "diagnostics": payload.get("diagnostics", []),
+        }
+        if not payload and completed.stderr:
+            result["error"] = completed.stderr.strip()
+        return result
+    except Exception as ex:
+        return {"available": False, "success": False, "legal": False,
+                "editorSchema": "mapmaker-v1", "schemaVersion": context["schemaVersion"],
+                "configVersion": context["configVersion"], "mode": context["mode"],
+                "projectRoot": context["projectRoot"], "error": str(ex), "diagnostics": []}
+
+
+def write_with_project_validation(path, text, encoding="utf-8"):
+    """Commit a tracked v1 authoring file only when the normalized project is legal."""
+    with VALIDATION_LOCK:
+        existed = os.path.exists(path)
+        previous = None
+        if existed:
+            with open(path, "rb") as stream:
+                previous = stream.read()
+        parent = os.path.dirname(os.path.abspath(path))
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        temp = path + ".mapmaker.tmp"
+        with open(temp, "w", encoding=encoding) as stream:
+            stream.write(text)
+        os.replace(temp, path)
+        validation = validate_project(path)
+        if validation.get("available") and validation.get("tracked") and not validation.get("success"):
+            if existed:
+                with open(temp, "wb") as stream:
+                    stream.write(previous)
+                os.replace(temp, path)
+            elif os.path.exists(path):
+                os.remove(path)
+            return False, validation
+        return True, validation
+
+
+def delete_with_project_validation(path):
+    with VALIDATION_LOCK:
+        if not os.path.exists(path):
+            return True, validate_project(path)
+        with open(path, "rb") as stream:
+            previous = stream.read()
+        os.remove(path)
+        validation = validate_project(path)
+        if validation.get("available") and validation.get("tracked") and not validation.get("success"):
+            temp = path + ".mapmaker.tmp"
+            with open(temp, "wb") as stream:
+                stream.write(previous)
+            os.replace(temp, path)
+            return False, validation
+        return True, validation
+
+
+# --------------------------------------------------------------------------- #
 # HTTP handler
 # --------------------------------------------------------------------------- #
 class Handler(BaseHTTPRequestHandler):
@@ -548,6 +713,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/prefs":
                 return self._send_json(prefs_payload())
+
+            if path == "/api/project-status":
+                return self._send_json(validate_project())
 
             if path == "/api/maps":
                 maps = []
@@ -607,22 +775,22 @@ class Handler(BaseHTTPRequestHandler):
                     for en in p.get("enemies", []):
                         en.pop("levelUp", None)
                 # write WITH BOM to match the existing map files / game loader
-                with open(fp, "w", encoding="utf-8-sig") as f:
-                    f.write(format_map(obj))
-                return self._send_json({"ok": True})
+                saved, validation = write_with_project_validation(
+                    fp, format_map(obj), encoding="utf-8-sig")
+                return self._send_json({"ok": saved, "saved": saved,
+                                        "legal": validation.get("legal", False),
+                                        "validation": validation}, 200 if saved else 422)
 
             if path == "/api/map-themes":
                 obj = json.loads(body)
                 errors = validate_map_themes(obj)
                 if errors:
                     return self._send_json({"ok": False, "errors": errors}, 400)
-                parent = os.path.dirname(os.path.abspath(MAP_THEMES_FILE))
-                if parent:
-                    os.makedirs(parent, exist_ok=True)
-                with open(MAP_THEMES_FILE, "w", encoding="utf-8") as f:
-                    json.dump(obj, f, indent=2, ensure_ascii=False)
-                    f.write("\n")
-                return self._send_json({"ok": True})
+                text = json.dumps(obj, indent=2, ensure_ascii=False) + "\n"
+                saved, validation = write_with_project_validation(MAP_THEMES_FILE, text)
+                return self._send_json({"ok": saved, "saved": saved,
+                                        "legal": validation.get("legal", False),
+                                        "validation": validation}, 200 if saved else 422)
 
             if path == "/api/terrains":
                 obj = json.loads(body)
@@ -635,10 +803,11 @@ class Handler(BaseHTTPRequestHandler):
                 errors = validate_enemy_config(obj)
                 if errors:
                     return self._send_json({"ok": False, "errors": errors}, 400)
-                with open(ENEMY_FILE, "w", encoding="utf-8") as f:
-                    json.dump(obj, f, indent=2, ensure_ascii=False)
-                    f.write("\n")
-                return self._send_json({"ok": True})
+                text = json.dumps(obj, indent=2, ensure_ascii=False) + "\n"
+                saved, validation = write_with_project_validation(ENEMY_FILE, text)
+                return self._send_json({"ok": saved, "saved": saved,
+                                        "legal": validation.get("legal", False),
+                                        "validation": validation}, 200 if saved else 422)
 
             if path == "/api/prefs":
                 obj = json.loads(body)
@@ -689,12 +858,16 @@ class Handler(BaseHTTPRequestHandler):
                 fp = safe_map_file(name)
                 if not fp:
                     return self._error(400, "invalid map name")
-                if os.path.exists(fp):
-                    os.remove(fp)
+                deleted, validation = delete_with_project_validation(fp)
+                if not deleted:
+                    return self._send_json({"ok": False, "deleted": False,
+                                            "legal": False, "validation": validation}, 422)
                 meta = fp + ".meta"          # clean up Unity leftover if present
                 if os.path.exists(meta):
                     os.remove(meta)
-                return self._send_json({"ok": True})
+                return self._send_json({"ok": True, "deleted": True,
+                                        "legal": validation.get("legal", False),
+                                        "validation": validation})
             return self._error(404, "unknown endpoint")
         except Exception as ex:
             return self._error(500, str(ex))
